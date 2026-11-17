@@ -4,11 +4,12 @@
 # build providers with the common envelope (the payloads and answers are
 # in internal/releaseplan/contract.go).
 #
-# This is a minimal manifest: only the version slot is wired up (U2). The
-# build, host and target slots nerv's release extension also declares
-# (internal/releaseplan's build-plan machinery, artifact, deploy*) are
-# U4/U5 work; they are not in this manifest yet, so loading it never
-# offers a build provider it cannot run.
+# This is still a minimal manifest: only the version slot is wired up
+# (U2), and the target slot only far enough for U3's config layer to
+# discover release-ssh-compose's scope: user keys (deployconfig, the
+# deploy run itself and the host slot are U4/U5 work; they are not in
+# this manifest yet, so loading it never offers a build or host provider
+# it cannot run).
 name: release
 contract_version: 1
 suggest_order: 2
@@ -28,3 +29,13 @@ slots:
       next: required
       branch: required
       import: optional
+  # One provider per deploy.targets entry, run in that order (U4 runs
+  # them; this slot exists now so release-ssh-compose's manifest, and its
+  # scope: user config keys, can be loaded).
+  - name: target
+    cardinality: per-target
+    operations:
+      preflight: optional
+      publish: optional
+      deploy: required
+      verify: optional

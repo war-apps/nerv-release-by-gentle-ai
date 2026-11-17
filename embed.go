@@ -3,11 +3,12 @@
 // version engine (internal/releaseplan.Providers.FS) can load their
 // manifests without a network round trip.
 //
-// Today this only embeds what U2 needs to compile and run `nerv-release
-// version next`: the release extension's version slot and its
-// conventional-commits provider. The build, host and target slots and
-// their providers (docker-compose, bash, github, ssh-compose) are U4/U5
-// work.
+// Today this embeds what U2 needs to compile and run `nerv-release
+// version next` (the release extension's version slot and its
+// conventional-commits provider) plus, for U3's config layer,
+// release-ssh-compose's manifest (its scope: user keys). The build and
+// host slots, release-ssh-compose's own deploy run, and the other
+// providers (docker-compose, bash, github) are U4/U5 work.
 package nervrelease
 
 import (

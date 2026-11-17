@@ -21,19 +21,13 @@ package releaseconfig
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/war-apps/nerv-kit-by-gentle-ai/aiworkflow"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseconfig/yamlsection"
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/workflowconfig"
 	"gopkg.in/yaml.v3"
 )
-
-// toolName is this tool's name in the kit's user/project configuration
-// layout (aiworkflow): the project file is
-// "<repoRoot>/.ai-workflow/release.yaml".
-const toolName = "release"
 
 // SectionKey is the top-level key of the section in .ai-workflow/release.yaml.
 const SectionKey = "release"
@@ -193,30 +187,31 @@ func (r *Release) Project(name string) (Project, bool) {
 	return Project{}, false
 }
 
-// Load reads the release: section of <repoRoot>/.ai-workflow/release.yaml, applies
-// defaults and validates it. It returns ErrNotConfigured when the file or
-// the key is absent, and an error listing every problem, each prefixed by
-// its path in the section (e.g. release.projects[1].depends_on[0].project),
-// when the section is invalid. A file that still has the removed release:
-// or pipeline: section is refused (RemovedSections), with what to do, and
-// so is a key that moved (an engine key under release:, a build: mapping),
-// naming its new place. Unlike nerv, there is no previous format to refuse:
+// Load reads the release: section of <repoRoot>/.ai-workflow/release.yaml
+// (through internal/workflowconfig, the config layer shared with
+// deployconfig), applies defaults and validates it. It returns
+// ErrNotConfigured when the file or the key is absent, and an error
+// listing every problem, each prefixed by its path in the section (e.g.
+// release.projects[1].depends_on[0].project), when the section is
+// invalid. A file that still has the removed release: or pipeline:
+// section is refused (RemovedSections), with what to do, and so is a key
+// that moved (an engine key under release:, a build: mapping), naming its
+// new place. Unlike nerv, there is no previous format to refuse:
 // nerv-release starts clean at release.yaml.
 func Load(repoRoot string) (*Release, error) {
-	path := aiworkflow.ProjectConfigPath(repoRoot, toolName)
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, ErrNotConfigured
-	}
+	cfg, err := workflowconfig.Load("", "", repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("release: %w", err)
 	}
-	rel, err := parse(data)
+	if !cfg.ProjectExists {
+		return nil, ErrNotConfigured
+	}
+	rel, err := parse([]byte(cfg.Project.String()))
 	if err != nil {
 		if errors.Is(err, ErrNotConfigured) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", cfg.ProjectPath, err)
 	}
 	return rel, nil
 }
