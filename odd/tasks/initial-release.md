@@ -22,8 +22,8 @@ Branch: `feat/initial-release` from `develop`. Module `github.com/war-apps/nerv-
 
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
-| U1 | R-S1 (proc, refusal, provider contract) | delegated writer | pending | |
-| U2 | R-S1, R-S2 (version engine: versioning, releaseconfig, releaseplan; `version next`) | delegated writer | pending | |
+| U1 | R-S1 (proc, refusal, provider contract) | delegated writer | done: proc, refusal, provider (keeps exec/slots/requires, `{nerv-release}`) | 55d8980 |
+| U2 | R-S1, R-S2 (version engine: versioning, releaseconfig, releaseplan; `version next`) | delegated writer | done: versioning, releaseconfig (+yamlsection, setup.go deferred to U3), version slice of releaseplan, releaseclone, `version next`; full suite green on Windows | b4cd999 |
 | U3 | R-S1, R-S4 (config layer, YAML editor port, release.yaml) | delegated writer | pending | |
 | U4 | R-S1, R-S2 (build and deploy: artifact, deploy*, releaseclone, releaserun; `build`, `deploy`, `provider`) | delegated writer | pending | |
 | U5 | R-S3, R-S5 (plugin trees, `{nerv-release}`, prose tests) | delegated writer | pending | |
@@ -34,3 +34,5 @@ Branch: `feat/initial-release` from `develop`. Module `github.com/war-apps/nerv-
 ## Log
 
 - **L1** (2026-11-17) Design from the P4 research. User decision: Windows passing is a 1.0.0 gate (R-S9). Defaults taken: verbs `build`/`deploy`/`version next`/`setup`; `.nerv/artifacts/` kept; `init` offers importing like nerv-task. Work runs without a Teamwork task (master L3); writers run in the foreground with no subagents, one or two units each.
+- **L2** (2026-11-17) U1+U2 done. Deferred: releaseconfig `setup.go`/`ImportSection` and the comment-preserving editor (U3); releaseplan build-plan machinery and `version next`'s build cross-check (U4, need artifact/releaserun). Minimal embedded `plugins/release/extension.yaml` and `release-conventional-commits/provider.yaml` until U5. Company names in fixtures replaced by `acme-*` (R-S10 early). Legacy-history prose in moved.go/removed.go (nerv migrate, nerv release, nerv pipeline) left for cleanup.
+- **L3** (2026-11-17) Incident: without the ported `TestMain` self-exec interception, `{nerv-release}` resolved to the test binary, which re-invoked itself as `provider ...` recursively (~1500 processes) until the writer killed them; TestMain + `runProvider`/`nativeProviders` were ported. Parent verified no leftover processes. Rule for later units: port a package's `TestMain` before running its tests. The writer also ran the suite in the background against instructions (versioning tests take ~450 s); later writers run packages one at a time.
