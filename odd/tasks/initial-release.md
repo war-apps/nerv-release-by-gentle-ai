@@ -1,0 +1,36 @@
+# nerv-release: the release tool of the NERV ecosystem, independent of nerv
+
+Objective: move nerv's release extension (plugin `release`, its 6 providers and the Go release engine) into this repository as an independent tool with its own CLI, install scripts, releases and configuration, that installs and works on a machine without nerv, Windows included; and make `version_files` work for any language.
+Master plan: `war-apps/nerv-by-gentle-ai` → `odd/tasks/ecosystem-split.md`, phase P4 (S2-S13, L8).
+Branch: `feat/initial-release` from `develop`. Module `github.com/war-apps/nerv-release-by-gentle-ai`, Go 1.26, binary `nerv-release`. Depends on nerv-kit v0.1.2. Releases start at 1.0.0. TDD: strict (session configuration); runner `go test ./...`. Source to port (read-only): nerv repo `develop` (v6.5.0). Reference tool shape and pitfalls: nerv-task (`odd/tasks/initial-task.md`).
+
+## Specs
+
+- **R-S1** Engine: port `internal/versioning`, `releaseconfig` (+ `yamlsection`), `releaseplan`, `releaseclone`, `releaserun`, `artifact`, `deploy`, `deployconfig`, `deployprovider`, `deployrun`; own copies of `internal/proc` and `internal/refusal`; a trimmed port of `internal/extension` as `internal/provider` that keeps the exec runtime, slots and `requires`; a port of nerv's comment-preserving YAML editor (`internal/config`, the parts the engine uses). `RefusePreviousProject` is dropped (no legacy format).
+- **R-S2** CLI engine verbs: `nerv-release version next [--branch] [--project] [--offline] [--fetch-timeout] [--json]`, `build` (today's `nerv release`, same flags), `deploy --artifact <dir> [flags]`, `setup --import [--dry-run]`, hidden `provider <plugin> <op>`. Tool verbs: `install`, `upgrade [--alpha|--rc]`, `configure [--print] [--json] [--set k=v]` (interactive on a terminal: provider choice, user keys with defaults, diff and confirm; `--answers` for tests), `init` (repository `release.yaml`, "none" allowed, offers importing `release:`/`deploy:` from `.ai-workflow/config.yaml` — repository values never go to the global file), `version [--json]` (`{"binary","plugin"}`).
+- **R-S3** `{nerv}` becomes `{nerv-release}` (os.Executable of nerv-release) in `extension.yaml`, the 5 native provider manifests and the deploy step variable; every `nerv …` call in the plugin markdown becomes the new verb.
+- **R-S4** Configuration (kit `aiworkflow`): repo `.ai-workflow/release.yaml` and global `~/.config/ai-workflow/release.yaml` (`%AppData%` on Windows), each with `release:` and `deploy:` sections as today; global holds `defaults:` (seed for `init` and the setup commands) and every provider key with `scope: user` (e.g. ssh-compose `ssh_auth`, `ssh_key_file`, `infisical_domain`, `ssh_known_hosts`, `ssh_connect_timeout`); project wins except personal keys. Artifacts stay in `.nerv/artifacts/`.
+- **R-S5** Plugins: marketplace `nerv-release` with core plugin `release` (`/release:*`, agents versioner/builder/deployer, skills release/deploy) and the 6 provider plugins with their current names (`release-bash`, `release-conventional-commits`, `release-docker-compose`, `release-github`, `release-script`, `release-ssh-compose`). The core plugin.json name is `release`.
+- **R-S6** Install over nerv's extension: install the new plugins, carry over every provider that was enabled as `<name>@nerv` (and refresh every already-enabled `<name>@nerv-release`), and only after a successful install disable `release@nerv` and its 6 provider plugins; on failure settings.json stays byte-identical; never touch other nerv plugins.
+- **R-S7** Generic `version_files` (master L8): entries are a string (format inferred) or `{path, key|keys, pattern, format, style}`; formats msbuild (existing, inserts `<Version>`), json (package.json `version`; package-lock.json `version` and `packages[""].version`; composer.json), toml (Cargo.toml `package.version`, pyproject.toml `project.version` | `tool.poetry.version`), yaml (Chart.yaml `version`/`appVersion`, pubspec.yaml), xml (pom.xml `project/version`), properties (gradle.properties `version=`), text (VERSION), regex (named group `version`); value-span edits keep files byte-for-byte (BOM, CRLF, comments, indentation, key order); a missing key or no regex match is an error (only msbuild inserts); validated at config load; captured into the artifact's release files automatically. Escape hatch `{command, files}` (e.g. `npm version {version} --no-git-tag-version --allow-same-version` capturing package.json and package-lock.json). `style: pep440` for non-SemVer prereleases. The semantic-release import maps `@semantic-release/npm` to package.json (+ package-lock.json when present) and `@semantic-release/git` assets in known formats; `/release:setup` proposes version files it detects.
+- **R-S8** Packaging: goreleaser (linux/darwin/windows, amd64/arm64, Windows zip with `nerv-release.exe`, LICENSE in archives), `scripts/install.sh`, `scripts/install.ps1` (exact-name checksum) with `tests/install-ps1.test.ps1`, `.gitattributes` LF, CI on Ubuntu and Windows running the FULL `go test ./...` (fail-fast false) plus an install-without-nerv job with a realistic `claude` stub, release workflow with a guard that matches dated CHANGELOG headings, `TestMain` isolation from `XDG_CONFIG_HOME`.
+- **R-S9** (user, 2026-11-17) Windows is a 1.0.0 gate: the full suite passes on the Windows runner before releasing; what breaks there (process-tree kill, Git Bash discovery, `.cmd` shim quoting, paths) is fixed, not skipped. Real-process tests may skip only when a tool is genuinely absent (docker, sshpass, infisical).
+- **R-S10** Before publishing: scan docs and examples for internal hostnames or company data.
+- **R-S11** nerv side (in the nerv repo, after 1.0.0): catalogue entry `nerv-release` replacing `release` and its 6 providers; migration of `release:`/`deploy:` (repo) and `defaults.release`/`defaults.deploy` + personal keys (user) to `release.yaml`; docs. `nerv maintainer-release` stays in nerv (independent of the engine).
+
+## Tasks
+
+| ID | Specs | Route | Status | Commit |
+|---|---|---|---|---|
+| U1 | R-S1 (proc, refusal, provider contract) | delegated writer | pending | |
+| U2 | R-S1, R-S2 (version engine: versioning, releaseconfig, releaseplan; `version next`) | delegated writer | pending | |
+| U3 | R-S1, R-S4 (config layer, YAML editor port, release.yaml) | delegated writer | pending | |
+| U4 | R-S1, R-S2 (build and deploy: artifact, deploy*, releaseclone, releaserun; `build`, `deploy`, `provider`) | delegated writer | pending | |
+| U5 | R-S3, R-S5 (plugin trees, `{nerv-release}`, prose tests) | delegated writer | pending | |
+| U6 | R-S2, R-S6, R-S8 (install/upgrade/configure/init/version, scripts, goreleaser, CI) | delegated writer | pending | |
+| U7 | R-S7 (generic version_files, importer, setup detection) | delegated writer | pending | |
+| U8 | R-S9, R-S10 (Windows CI green, scan) | delegated writer | pending | |
+
+## Log
+
+- **L1** (2026-11-17) Design from the P4 research. User decision: Windows passing is a 1.0.0 gate (R-S9). Defaults taken: verbs `build`/`deploy`/`version next`/`setup`; `.nerv/artifacts/` kept; `init` offers importing like nerv-task. Work runs without a Teamwork task (master L3); writers run in the foreground with no subagents, one or two units each.
