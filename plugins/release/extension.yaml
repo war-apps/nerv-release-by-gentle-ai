@@ -1,0 +1,30 @@
+# The release extension's contract with the NERV core (nerv's
+# docs/extensions.md). The core runs nerv-release version next (and,
+# later, nerv-release build and deploy), which calls the version and
+# build providers with the common envelope (the payloads and answers are
+# in internal/releaseplan/contract.go).
+#
+# This is a minimal manifest: only the version slot is wired up (U2). The
+# build, host and target slots nerv's release extension also declares
+# (internal/releaseplan's build-plan machinery, artifact, deploy*) are
+# U4/U5 work; they are not in this manifest yet, so loading it never
+# offers a build provider it cannot run.
+name: release
+contract_version: 1
+suggest_order: 2
+# Every release provider is installed with release, never asked.
+providers: bundled
+runtime: exec
+argv: ["{nerv-release}", release]
+slots:
+  # The version engine (release.version): the next version, channel, tag,
+  # notes and CHANGELOG section of each project on a branch;
+  # conventional-commits when release.version names none.
+  - name: version
+    cardinality: one
+    default: conventional-commits
+    operations:
+      validate: optional
+      next: required
+      branch: required
+      import: optional
