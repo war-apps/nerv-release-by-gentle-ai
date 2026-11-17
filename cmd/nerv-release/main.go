@@ -31,9 +31,9 @@ Engine commands:
   deploy --artifact <dir> [flags]
                          Release and deploy a release artifact (not
                          implemented yet)
-  setup --import [--dry-run]
+  setup --import [--force] [--dry-run]
                          Import a semantic-release configuration into the
-                         release: section (not implemented yet)
+                         release: section (see "nerv-release setup --help")
 
 Tool commands (not implemented yet):
   install [flags]        Install nerv-release
@@ -113,7 +113,9 @@ func run(args []string, stdout, stderr io.Writer, opts options) int {
 		// by the release extension (releaseProviders' Call) as
 		// `{nerv-release} provider <plugin> <operation>`.
 		return runProvider(args[1:], stdout, stderr, opts)
-	case "build", "deploy", "setup", "install", "upgrade", "configure", "init":
+	case "setup":
+		return runReleaseSetup(args[1:], stdout, stderr, opts)
+	case "build", "deploy", "install", "upgrade", "configure", "init":
 		fmt.Fprintf(stderr, "nerv-release %s: not implemented yet\n", args[0])
 		return 2
 	default:
