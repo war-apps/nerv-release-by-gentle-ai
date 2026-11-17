@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	nervrelease "github.com/war-apps/nerv-release-by-gentle-ai"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseconfig/yamlsection"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/workflowconfig"
 	"gopkg.in/yaml.v3"
@@ -205,6 +206,22 @@ func Load(repoRoot string) (*Release, error) {
 	}
 	if !cfg.ProjectExists {
 		return nil, ErrNotConfigured
+	}
+	// R-S4: a project setting a personal (scope: user) key is refused,
+	// never silently honored. This scan parses the whole document as
+	// YAML (unlike the tolerant per-block parse below), so a scan error
+	// is not fatal here: it falls through to the normal parse, which
+	// reports whatever is actually wrong with the release: block.
+	personal, err := workflowconfig.LoadPersonal(nervrelease.ExtensionsFS())
+	if err != nil {
+		return nil, fmt.Errorf("release: %w", err)
+	}
+	if keys, err := workflowconfig.ProjectPersonalKeys(cfg.Project, personal); err == nil && len(keys) > 0 {
+		msgs := make([]string, len(keys))
+		for i, k := range keys {
+			msgs[i] = workflowconfig.PersonalKeyMessage(k)
+		}
+		return nil, &ValidationError{Problems: msgs}
 	}
 	rel, err := parse([]byte(cfg.Project.String()))
 	if err != nil {
