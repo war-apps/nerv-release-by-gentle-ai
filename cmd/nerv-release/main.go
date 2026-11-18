@@ -135,12 +135,7 @@ func run(args []string, stdout, stderr io.Writer, opts options) int {
 		if len(args) > 1 && args[1] == "next" {
 			return runVersionNext(args[2:], stdout, stderr, opts)
 		}
-		if len(args) == 1 {
-			fmt.Fprintln(stderr, "nerv-release version: not implemented yet (binary/plugin version reporting is U6)")
-			return 2
-		}
-		fmt.Fprint(stderr, usage)
-		return 2
+		return runVersion(args[1:], stdout, stderr)
 	case "provider":
 		// Hidden: the operations of nerv-release's native providers, run
 		// by the release extension (releaseProviders' Call) as

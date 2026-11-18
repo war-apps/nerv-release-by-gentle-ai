@@ -159,8 +159,10 @@ func notReleased(project string) versioning.Result {
 }
 
 // ---------------------------------------------------------------------------
-// Dispatch: bare `version` is unchanged, `version next` computes, anything
-// else after `version` is a usage error.
+// Dispatch: `version next` computes; anything else after `version` is a
+// usage error for the `version` leaf command itself (U6: bare `version`
+// prints the binary/plugin versions, so an invalid argument to it shows
+// its own usage, exactly as build/deploy/setup do for theirs).
 // ---------------------------------------------------------------------------
 
 func TestRun_VersionUnknownSubcommandIsAUsageError(t *testing.T) {
@@ -170,8 +172,8 @@ func TestRun_VersionUnknownSubcommandIsAUsageError(t *testing.T) {
 		if code != 2 {
 			t.Errorf("%v: exit code = %d, want 2", args, code)
 		}
-		if stdout.Len() != 0 || !strings.Contains(stderr.String(), "version next") {
-			t.Errorf("%v: stdout=%q stderr=%q, want usage (naming `version next`) on stderr only", args, stdout.String(), stderr.String())
+		if stdout.Len() != 0 || !strings.Contains(stderr.String(), "Usage: nerv-release version") {
+			t.Errorf("%v: stdout=%q stderr=%q, want version's own usage on stderr only", args, stdout.String(), stderr.String())
 		}
 	}
 }
