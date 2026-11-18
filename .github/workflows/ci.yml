@@ -1,0 +1,215 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        shell: bash
+        run: go vet ./...
+
+      - name: go build
+        shell: bash
+        run: go build ./...
+
+      # TODO(U8): internal/deployrun is excluded here because two of its
+      # tests (TestRun_PublishesTheImagesWithoutTargets,
+      # TestRun_SkipsThePublishWithoutImages) run the REAL docker/gh of
+      # whatever machine executes them (L8, odd/tasks/initial-release.md);
+      # on a CI runner that means the runner's own docker/gh, with no
+      # developer credentials at risk but still a real, unfaked external
+      # process from a unit test. U8 isolates internal/deployrun with
+      # fakes first on PATH (or an injected runner) so it never reaches a
+      # real docker/gh, then this exclusion is removed and the package
+      # re-enabled on both OSes.
+      #
+      # Every other package runs here, including the ones with known L5
+      # Windows failures (releaserun pwsh CR stripping, deploy backslash
+      # paths, releaseplan non-absolute fixture paths, deployrun's
+      # #!/bin/sh fake binary, cmd/nerv-release's unquoted backslash
+      # redirects): R-S9 makes a fully green Windows run a 1.0.0 gate, so
+      # those failures stay visible (red) here on purpose until U8 fixes
+      # them, instead of being skipped.
+      - name: go test (excludes internal/deployrun; see TODO above)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t pkgs < <(go list ./... | grep -v '/internal/deployrun$')
+          go test -count=1 "${pkgs[@]}"
+
+      - name: install.ps1 tests (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/install-ps1.test.ps1
+
+  install-without-nerv:
+    name: Install on a runner with no nerv
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build nerv-release
+        shell: bash
+        run: go build -o "$RUNNER_TEMP/bin/nerv-release" ./cmd/nerv-release
+
+      - name: Install with a fake HOME and a stub claude
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fakehome="$RUNNER_TEMP/fakehome"
+          stubdir="$RUNNER_TEMP/stub"
+          mkdir -p "$fakehome" "$stubdir"
+
+          # A realistic stub: "install" fails unless the plugin name is
+          # actually listed in the marketplace it was registered under
+          # (resolved through settings.json's extraKnownMarketplaces, the
+          # same way the real claude CLI's own registration works), and
+          # "uninstall" fails for a plugin that is not currently recorded
+          # as installed. This is what exposed nerv-task's own
+          # first-install bug (a stub that accepted anything never did),
+          # and nerv-release mirrors that same stub (odd/tasks/initial-release.md).
+          cat >"$stubdir/claude" <<'EOF'
+          #!/usr/bin/env python3
+          import json
+          import os
+          import sys
+
+          def load_json(path, default):
+              if not os.path.exists(path):
+                  return default
+              with open(path) as f:
+                  return json.load(f)
+
+          def save_json(path, data):
+              os.makedirs(os.path.dirname(path), exist_ok=True)
+              with open(path, "w") as f:
+                  json.dump(data, f, indent=2)
+
+          def fail(message):
+              print(message, file=sys.stderr)
+              sys.exit(1)
+
+          args = sys.argv[1:]
+          home = os.environ.get("HOME", "")
+          settings_path = os.path.join(home, ".claude", "settings.json")
+          installed_path = os.path.join(home, ".claude", "plugins", "installed_plugins.json")
+
+          if len(args) < 2 or args[0] != "plugin":
+              fail(f"stub claude: unsupported invocation: {args}")
+
+          verb = args[1]
+
+          if verb == "marketplace" and len(args) >= 4 and args[2] == "add":
+              directory = args[3]
+              manifest_path = os.path.join(directory, ".claude-plugin", "marketplace.json")
+              with open(manifest_path) as f:
+                  manifest = json.load(f)
+              name = manifest["name"]
+              settings = load_json(settings_path, {})
+              settings.setdefault("extraKnownMarketplaces", {})[name] = {
+                  "source": {"source": "directory", "path": directory}
+              }
+              save_json(settings_path, settings)
+              print(f"stub claude: added marketplace {name} at {directory}")
+              sys.exit(0)
+
+          if verb == "install" and len(args) >= 3:
+              plugin_id = args[2]
+              name, _, marketplace = plugin_id.partition("@")
+              settings = load_json(settings_path, {})
+              entry = settings.get("extraKnownMarketplaces", {}).get(marketplace)
+              if entry is None:
+                  fail(f'Marketplace "{marketplace}" not found')
+              directory = entry["source"]["path"]
+              manifest_path = os.path.join(directory, ".claude-plugin", "marketplace.json")
+              manifest = load_json(manifest_path, {"plugins": []})
+              names = [p["name"] for p in manifest.get("plugins", [])]
+              if name not in names:
+                  fail(f'Plugin "{name}" not found in marketplace "{marketplace}"')
+              installed = load_json(installed_path, {"plugins": {}})
+              installed.setdefault("plugins", {})[plugin_id] = [
+                  {"installPath": directory, "version": "1.0.0"}
+              ]
+              save_json(installed_path, installed)
+              print(f"stub claude: installed {plugin_id}")
+              sys.exit(0)
+
+          if verb == "uninstall" and len(args) >= 3:
+              plugin_id = args[2]
+              installed = load_json(installed_path, {"plugins": {}})
+              plugins = installed.get("plugins", {})
+              if plugin_id not in plugins:
+                  fail(f'Plugin "{plugin_id}" not found in installed plugins')
+              del plugins[plugin_id]
+              save_json(installed_path, installed)
+              print(f"stub claude: uninstalled {plugin_id}")
+              sys.exit(0)
+
+          fail(f"stub claude: unsupported invocation: {args}")
+          EOF
+          chmod +x "$stubdir/claude"
+
+          HOME="$fakehome" PATH="$stubdir:$RUNNER_TEMP/bin:$PATH" "$RUNNER_TEMP/bin/nerv-release" install --no-configure
+
+          settings="$fakehome/.claude/settings.json"
+          if [ ! -f "$settings" ]; then
+            echo "settings.json was not written at $settings"
+            exit 1
+          fi
+          cat "$settings"
+
+          python3 - "$settings" <<'PYEOF'
+          import json, sys
+          with open(sys.argv[1]) as f:
+              data = json.load(f)
+          enabled = data.get("enabledPlugins", {})
+          marketplaces = data.get("extraKnownMarketplaces", {})
+          assert enabled.get("release@nerv-release") is True, f"release@nerv-release not enabled: {enabled}"
+          assert "nerv-release" in marketplaces, f"nerv-release marketplace not registered: {marketplaces}"
+          print("settings.json registers nerv-release and enables release@nerv-release")
+          PYEOF
