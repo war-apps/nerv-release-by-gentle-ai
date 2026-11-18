@@ -21,8 +21,10 @@ package deployconfig
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	nervrelease "github.com/war-apps/nerv-release-by-gentle-ai"
@@ -118,7 +120,14 @@ func CommitMessage(message string, r Release) string {
 // releaseconfig. A project setting a personal (scope: user) key, such as
 // release-ssh-compose's ssh_known_hosts or infisical_domain, is refused
 // (R-S4): a deploy must not run with an ambiguous trust boundary between
-// the repository and the user's own configuration.
+// the repository and the user's own configuration. This applies both to
+// the section-level deploy.providers.<provider>.<key> shape
+// (refusePersonalKeys) and to the same key reaching a target through its
+// own config: override, deploy.targets[].config.<key>
+// (refuseTargetPersonalKeys): a target's provider still reads personal
+// keys from the user file only (internal/deployrun), so a repository
+// value there would be silently ignored at run time while looking, to
+// anyone reading the file, like the value in effect.
 func Load(repoRoot string) (*Deploy, error) {
 	cfg, err := workflowconfig.Load("", "", repoRoot)
 	if err != nil {
@@ -127,7 +136,11 @@ func Load(repoRoot string) (*Deploy, error) {
 	if !cfg.ProjectExists {
 		return nil, ErrNotConfigured
 	}
-	if err := refusePersonalKeys(cfg.Project); err != nil {
+	personal, err := workflowconfig.LoadPersonal(nervrelease.ExtensionsFS())
+	if err != nil {
+		return nil, err
+	}
+	if err := refusePersonalKeys(cfg.Project, personal); err != nil {
 		return nil, fmt.Errorf("%s: %w", cfg.ProjectPath, err)
 	}
 	data := []byte(cfg.Project.String())
@@ -135,7 +148,13 @@ func Load(repoRoot string) (*Deploy, error) {
 	if err != nil && !errors.Is(err, ErrNotConfigured) {
 		return nil, fmt.Errorf("%s: %w", cfg.ProjectPath, err)
 	}
-	return d, err
+	if err != nil {
+		return nil, err
+	}
+	if err := refuseTargetPersonalKeys(d, personal); err != nil {
+		return nil, fmt.Errorf("%s: %w", cfg.ProjectPath, err)
+	}
+	return d, nil
 }
 
 // refusePersonalKeys reports every personal key (workflowconfig.Personal)
@@ -144,11 +163,7 @@ func Load(repoRoot string) (*Deploy, error) {
 // as YAML (unlike parse's tolerant per-block cut), so a scan error is not
 // reported here: it falls through to parse, which reports whatever is
 // actually wrong with the deploy: block.
-func refusePersonalKeys(project *config.Document) error {
-	personal, err := workflowconfig.LoadPersonal(nervrelease.ExtensionsFS())
-	if err != nil {
-		return err
-	}
+func refusePersonalKeys(project *config.Document, personal workflowconfig.Personal) error {
 	keys, err := workflowconfig.ProjectPersonalKeys(project, personal)
 	if err != nil || len(keys) == 0 {
 		return nil
@@ -156,6 +171,26 @@ func refusePersonalKeys(project *config.Document) error {
 	msgs := make([]string, len(keys))
 	for i, k := range keys {
 		msgs[i] = workflowconfig.PersonalKeyMessage(k)
+	}
+	return errors.New(strings.Join(msgs, "; "))
+}
+
+// refuseTargetPersonalKeys reports every key of a target's own config:
+// override that is personal for that target's provider
+// (deploy.providers.<provider>.<key>, the same namespace
+// workflowconfig.Personal indexes), named by where it was actually
+// written (deploy.targets[i].config.<key>), as one error naming each.
+func refuseTargetPersonalKeys(d *Deploy, personal workflowconfig.Personal) error {
+	var msgs []string
+	for i, t := range d.Targets {
+		for _, key := range slices.Sorted(maps.Keys(t.Config)) {
+			if personal.Has("deploy.providers." + t.Provider + "." + key) {
+				msgs = append(msgs, workflowconfig.PersonalKeyMessage(fmt.Sprintf("deploy.targets[%d].config.%s", i, key)))
+			}
+		}
+	}
+	if len(msgs) == 0 {
+		return nil
 	}
 	return errors.New(strings.Join(msgs, "; "))
 }

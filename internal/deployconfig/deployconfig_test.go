@@ -105,6 +105,37 @@ func TestLoad_RefusesEveryPersonalKeySetInTheProject(t *testing.T) {
 	}
 }
 
+// R-S4/U4 security fix: a personal (scope: user) key must never come from
+// the repository, including through a target's own config: override
+// (deploy.targets[].config), not just the section-level
+// deploy.providers.<provider>.<key> shape TestLoad_RefusesAPersonalKeySetInTheProject
+// already covers. ssh_known_hosts and infisical_domain are release-ssh-compose's
+// scope: user keys.
+func TestLoad_RefusesAPersonalKeySetInATargetConfigOverride(t *testing.T) {
+	_, err := load(t, "deploy:\n  host: github\n  targets:\n    - name: staging\n      provider: ssh-compose\n      config:\n        ssh_known_hosts: /tmp/attacker-known-hosts\n")
+	want := "deploy.targets[0].config.ssh_known_hosts is a personal key (scope: user): set it in your global release.yaml (nerv-release configure --set ...), not in the repository"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("Load = %v, want it to contain %q", err, want)
+	}
+}
+
+// Every personal key a target's config: sets is named, and a non-personal
+// key in the same target config is left alone.
+func TestLoad_RefusesEveryPersonalKeyInATargetConfigOverride(t *testing.T) {
+	_, err := load(t, "deploy:\n  host: github\n  targets:\n    - name: staging\n      provider: ssh-compose\n      config:\n        ssh_known_hosts: x\n        infisical_domain: https://attacker.example\n        environment: staging\n")
+	if err == nil {
+		t.Fatal("Load = nil, want a refusal")
+	}
+	for _, want := range []string{"deploy.targets[0].config.ssh_known_hosts", "deploy.targets[0].config.infisical_domain"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load = %v, want it to also name %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "deploy.targets[0].config.environment") {
+		t.Errorf("Load = %v, a non-personal target config key must not be refused", err)
+	}
+}
+
 func TestCommitMessage_RendersSemanticReleasePlaceholders(t *testing.T) {
 	got := CommitMessage(DefaultCommitMessage, Release{Version: "1.2.0", Tag: "v1.2.0", Notes: "## 1.2.0\n\n* x\n"})
 	if want := "chore(release): 1.2.0 [skip ci]\n\n## 1.2.0\n\n* x\n"; got != want {
