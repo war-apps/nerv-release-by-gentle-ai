@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/gitredact"
 )
 
 var (
@@ -147,19 +149,17 @@ func stderrTail(stderr []byte) string {
 	return "\n" + strings.Join(lines, "\n")
 }
 
-var (
-	// urlUserinfoRe matches the userinfo of a URL ("scheme://user:pass@").
-	urlUserinfoRe = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@'"]+@`)
-	// secretQueryRe matches a URL query parameter whose name says it holds a
-	// secret (token, access_token, private_token, password, secret, key, sig).
-	secretQueryRe = regexp.MustCompile(`(?i)([?&][a-z0-9_.-]*(?:token|password|passwd|secret|key|sig)[a-z0-9_.-]*=)[^&\s'"#]+`)
-)
+// secretQueryRe matches a URL query parameter whose name says it holds a
+// secret (token, access_token, private_token, password, secret, key, sig).
+var secretQueryRe = regexp.MustCompile(`(?i)([?&][a-z0-9_.-]*(?:token|password|passwd|secret|key|sig)[a-z0-9_.-]*=)[^&\s'"#]+`)
 
-// redact hides the credentials of every URL in s: the userinfo
-// (https://user:token@host -> https://***@host) and secret-looking query
-// values (?access_token=x -> ?access_token=***). Every command string and
-// process output put in an error goes through it.
+// redact hides the credentials of every URL in s: secret userinfo
+// (https://user:token@host -> https://***@host, via gitredact, which
+// leaves a bare ssh username, git's own login-name convention,
+// unchanged) and secret-looking query values (?access_token=x ->
+// ?access_token=***). Every command string and process output put in an
+// error goes through it.
 func redact(s string) string {
-	s = urlUserinfoRe.ReplaceAllString(s, "${1}***@")
+	s = gitredact.Stderr(s)
 	return secretQueryRe.ReplaceAllString(s, "${1}***")
 }

@@ -6,7 +6,13 @@ func TestRedact(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"https://user:pass@github.com/a/b.git", "https://***@github.com/a/b.git"},
 		{"fatal: unable to access 'https://x-access-token:ghs_abc@github.com/a/b.git/': 403", "fatal: unable to access 'https://***@github.com/a/b.git/': 403"},
-		{"ssh://git@host:22/repo", "ssh://***@host:22/repo"},
+		// A bare ssh username carries no network credential; an ssh URL
+		// with a password part does.
+		{"ssh://git@host:22/repo", "ssh://git@host:22/repo"},
+		{"ssh://git:s3cr3t@host:22/repo", "ssh://***@host:22/repo"},
+		// The userinfo runs up to the LAST '@' before the host: a
+		// password may itself contain '@'.
+		{"fatal: unable to access 'https://user:p@ss@github.com/a/b.git/': 403", "fatal: unable to access 'https://***@github.com/a/b.git/': 403"},
 		{"https://h/r.git?access_token=abc&ref=main", "https://h/r.git?access_token=***&ref=main"},
 		{"https://h/r?private_token=abc", "https://h/r?private_token=***"},
 		{"https://github.com/a/b.git", "https://github.com/a/b.git"},

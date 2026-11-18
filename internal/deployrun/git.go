@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/artifact"
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/gitredact"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/proc"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/refusal"
 )
@@ -27,13 +28,17 @@ type workspace struct {
 	env    []string
 }
 
-// git runs git in the workspace and returns its trimmed stdout.
+// git runs git in the workspace and returns its trimmed stdout. git often
+// echoes the remote URL, credentials included, in its stderr (an
+// authentication failure, an unreachable host, a rejected push); detail
+// goes through gitredact before it ever reaches an error, a log line, a
+// JSON report or a step's output.
 func (w workspace) git(ctx context.Context, args ...string) (string, error) {
 	res, err := w.runner.Run(ctx, proc.Command{Name: "git", Args: append([]string{"-C", w.dir}, args...), Env: w.env})
 	if err != nil {
-		detail := strings.TrimSpace(string(res.Stderr))
+		detail := strings.TrimSpace(gitredact.Stderr(string(res.Stderr)))
 		if detail == "" {
-			detail = strings.TrimSpace(string(res.Stdout))
+			detail = strings.TrimSpace(gitredact.Stderr(string(res.Stdout)))
 		}
 		if detail != "" {
 			return "", fmt.Errorf("git %s: %w: %s", subcommand(args), err, detail)
@@ -73,12 +78,16 @@ func (w workspace) resolve(ctx context.Context, rev string) string {
 
 // clone clones url's branch into the workspace with origin's tags and
 // semantic-release notes. Credentials stay the user's git setup; prompts
-// are refused.
+// are refused. url and git's stderr (which usually echoes url back) both
+// go through gitredact before they reach the returned error: a CI remote
+// commonly configures origin as https://user:token@host/..., and that
+// token must never leak into an error, a log line, a JSON report or a
+// step's output.
 func (w workspace) clone(ctx context.Context, url, branch string) error {
 	res, err := w.runner.Run(ctx, proc.Command{Name: "git", Env: w.env,
 		Args: []string{"-c", "credential.interactive=never", "clone", "--quiet", "--no-checkout", "--branch", branch, "--", url, w.dir}})
 	if err != nil {
-		return fmt.Errorf("git clone %s (branch %s): %w: %s", url, branch, err, strings.TrimSpace(string(res.Stderr)))
+		return fmt.Errorf("git clone %s (branch %s): %w: %s", gitredact.URL(url), branch, err, strings.TrimSpace(gitredact.Stderr(string(res.Stderr))))
 	}
 	_, err = w.git(ctx, "-c", "credential.interactive=never", "fetch", "--quiet", "--tags", "origin",
 		"+refs/notes/semantic-release*:refs/notes/semantic-release*")
