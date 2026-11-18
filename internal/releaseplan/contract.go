@@ -3,7 +3,7 @@ package releaseplan
 import "github.com/war-apps/nerv-release-by-gentle-ai/internal/versioning"
 
 // The release extension's side of the provider contract
-// (plugins/release/extension.yaml): its slots, their operations, and the
+// (plugin/release/extension.yaml): its slots, their operations, and the
 // payload each operation is called with and the data it answers. Every
 // call is the common envelope (provider.Request and provider.Response); a
 // provider's config is its resolved release.providers.<provider> keys (a

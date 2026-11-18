@@ -5,7 +5,7 @@
 // request payload. The shape every provider shares (name, extension,
 // slot, runtime, requires, config, operations) is internal/extension's;
 // a deploy provider is an exec provider of a host or target slot of
-// plugins/release/provider.yaml.
+// plugin/release/provider.yaml.
 //
 // An operation is one or more argv templates that Go runs directly, never
 // through a shell. A template element is either a literal or exactly one
@@ -29,7 +29,7 @@ const ManifestFile = provider.ProviderFile
 // whose host and target slots are nerv-release deploy's.
 const Extension = "release"
 
-// The deploy slots of the release extension (plugins/release/provider.yaml).
+// The deploy slots of the release extension (plugin/release/provider.yaml).
 const (
 	SlotHost   = "host"
 	SlotTarget = "target"
