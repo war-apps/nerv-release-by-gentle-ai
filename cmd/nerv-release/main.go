@@ -24,8 +24,8 @@ import (
 
 // usage lists every verb R-S2 plans for nerv-release
 // (odd/tasks/initial-release.md). "version next", "build", "deploy" and
-// "setup" work today (U2-U4); the tool commands print a not-implemented
-// notice until U6.
+// "setup" work since U2-U4; install/upgrade/configure/init/version are
+// U6a.
 const usage = `Usage: nerv-release <command> [flags]
 
 Engine commands:
@@ -40,12 +40,16 @@ Engine commands:
                          Import a semantic-release configuration into the
                          release: section (see "nerv-release setup --help")
 
-Tool commands (not implemented yet):
-  install [flags]        Install nerv-release
+Tool commands:
+  install [--no-configure]
+                         Install nerv-release (see "nerv-release install --help")
   upgrade [--alpha | --rc]
                          Replace this binary with the newest release
-  configure [flags]      Configure nerv-release
-  init [flags]            Write this repository's release.yaml
+  configure [--print] [--json] [--set k=v] [--answers f]
+                         Configure nerv-release (see "nerv-release configure --help")
+  init [--import] [--none]
+                         Write this repository's release.yaml (see
+                         "nerv-release init --help")
   version [--json]       Print the binary and plugin versions
 `
 
@@ -147,9 +151,14 @@ func run(args []string, stdout, stderr io.Writer, opts options) int {
 		return runBuild(args[1:], stdout, stderr, opts)
 	case "deploy":
 		return runDeploy(args[1:], stdout, stderr, opts)
-	case "install", "upgrade", "configure", "init":
-		fmt.Fprintf(stderr, "nerv-release %s: not implemented yet\n", args[0])
-		return 2
+	case "install":
+		return runInstall(args[1:], stdout, stderr, opts)
+	case "upgrade":
+		return runUpgrade(args[1:], stdout, stderr, opts)
+	case "configure":
+		return runConfigure(args[1:], stdout, stderr, opts)
+	case "init":
+		return runInit(args[1:], stdout, stderr, opts)
 	default:
 		fmt.Fprint(stderr, usage)
 		return 2
