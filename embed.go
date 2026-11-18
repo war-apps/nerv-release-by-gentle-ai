@@ -62,6 +62,16 @@ func rawExtensionsFS() fs.FS {
 	return sub
 }
 
+// ProvidersFS returns the 6 provider plugins alone, with no "release"
+// folder of its own: the shape claudeplugin.MaterializeBundle wants for
+// its own extensions argument (nerv-release install, U6: the release
+// extension itself is materialized through CoreFS as the marketplace's
+// core plugin, never a second time as if it were one of its own
+// providers).
+func ProvidersFS() fs.FS {
+	return rawExtensionsFS()
+}
+
 // ExtensionsFS returns the release extension and its providers as one
 // tree, one folder each, such as "release/extension.yaml" and
 // "release-bash/provider.yaml", so the release engine can load the

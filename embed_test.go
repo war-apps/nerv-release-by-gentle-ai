@@ -100,6 +100,37 @@ func TestExtensionsFS_HasEveryProviderManifest(t *testing.T) {
 	}
 }
 
+// ProvidersFS is the 6 provider plugins alone, with no "release" folder:
+// the shape claudeplugin.MaterializeBundle wants for its own extensions
+// argument (nerv-release install must never materialize the release
+// extension a second time as if it were one of its own providers).
+func TestProvidersFS_HasOnlyTheSixProviderPlugins(t *testing.T) {
+	entries, err := fs.ReadDir(ProvidersFS(), ".")
+	if err != nil {
+		t.Fatalf("ReadDir(.): %v", err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	want := []string{
+		"release-bash", "release-conventional-commits",
+		"release-docker-compose", "release-github", "release-script",
+		"release-ssh-compose",
+	}
+	if len(names) != len(want) {
+		t.Fatalf("ReadDir(.) = %v, want %v", names, want)
+	}
+	for i, w := range want {
+		if names[i] != w {
+			t.Errorf("ReadDir(.)[%d] = %q, want %q (full: %v)", i, names[i], w, names)
+		}
+	}
+	if _, err := fs.Stat(ProvidersFS(), "release"); err == nil {
+		t.Error(`Stat("release") succeeded, want ProvidersFS to have no "release" folder of its own`)
+	}
+}
+
 // fs.WalkDir is how the prose tests sweep every plugin file (for stray
 // {nerv} or bare nerv CLI mentions); it must work over the whole union,
 // descending into "release" and into every provider folder.
