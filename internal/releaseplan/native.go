@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/war-apps/nerv-kit-by-gentle-ai/runner"
@@ -20,18 +23,14 @@ import (
 // The native release providers, by plugin name: the providers nerv-release
 // implements itself, run as the hidden `nerv-release provider <plugin>
 // <operation>` with the request on stdin and the response on stdout.
-//
-// DockerCompose and Bash (the native build providers) are deferred to U4;
-// only the ConventionalCommits version engine is wired up today.
 const (
 	ConventionalCommits = "release-conventional-commits"
 	DockerCompose       = "release-docker-compose"
 	Bash                = "release-bash"
 )
 
-// NativeProviders are the native release providers' plugin names
-// nerv-release can run today.
-var NativeProviders = []string{ConventionalCommits}
+// NativeProviders are the native release providers' plugin names.
+var NativeProviders = []string{Bash, ConventionalCommits, DockerCompose}
 
 // NativeDeps are what the native providers run with.
 type NativeDeps struct {
@@ -54,8 +53,7 @@ func RunNative(ctx context.Context, plugin, op string, stdin io.Reader, stdout, 
 	case ConventionalCommits:
 		resp = conventionalCommits(ctx, op, req, deps)
 	case DockerCompose, Bash:
-		fmt.Fprintf(stderr, "nerv-release provider: %q is not implemented yet (U4)\n", plugin)
-		return 2
+		resp = buildProvider(plugin, op, req)
 	default:
 		fmt.Fprintf(stderr, "nerv-release provider: %q is not a native release provider\n", plugin)
 		return 2
@@ -325,8 +323,81 @@ func engineValues(cfg versioning.Config) (map[string]*yaml.Node, error) {
 	return values, nil
 }
 
-// The docker-compose and bash native build providers (buildProvider and
-// its validate/plan helpers) are deferred to U4, together with the
-// build-plan machinery they need (internal/artifact, internal/releaserun,
-// internal/releaseplan's buildservers.go/coverage.go/csproj.go/plan.go/
-// run.go) and the build, deploy and provider CLI verbs.
+// composeOnlyStages are the stages a docker-compose project may still
+// write commands for: compose runs build, test and package itself.
+var composeOnlyStages = []string{"restore", "lint", "coverage"}
+
+// sharedHostStages are the bash stages that get the build-server
+// environment with shared_host: the stages dotnet commands run in.
+var sharedHostStages = []string{"restore", "lint", "build", "test", "package"}
+
+var serviceRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+
+// buildConfig is the build providers' keys.
+type buildConfig struct {
+	File        string `json:"file"`
+	TestService string `json:"test_service"`
+	SharedHost  bool   `json:"shared_host"`
+}
+
+// buildProvider is docker-compose's or bash's validate and plan.
+func buildProvider(plugin, op string, req provider.Request) provider.Response {
+	var payload BuildPayload
+	if err := req.DecodePayload(&payload); err != nil {
+		return failed("payload: %v", err)
+	}
+	var cfg buildConfig
+	if err := req.DecodeConfig(&cfg); err != nil {
+		return failed("config: %v", err)
+	}
+	name := strings.TrimPrefix(plugin, Extension+"-")
+	var problems []string
+	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
+	keyAt := payload.At + ".providers." + name
+	if plugin == DockerCompose {
+		switch {
+		case cfg.File == "":
+			add("%s.file: required by the docker-compose build (or release.providers.docker-compose.file for every project)", keyAt)
+		default:
+			if p := yamlsection.PathProblem(keyAt+".file", cfg.File); p != "" {
+				problems = append(problems, p)
+			}
+		}
+		if cfg.TestService != "" && !serviceRe.MatchString(cfg.TestService) {
+			add("%s.test_service: %q is not a compose service name", keyAt, cfg.TestService)
+		}
+		stages := slices.Clone(payload.Stages)
+		sort.Strings(stages)
+		for _, stage := range stages {
+			if slices.Contains(releaseconfig.Stages, stage) && !slices.Contains(composeOnlyStages, stage) {
+				add("%s.stages.%s: docker-compose runs %s itself (docker compose build, run and save); remove it, or use build: bash", payload.At, stage, stage)
+			}
+		}
+	}
+	if len(problems) > 0 {
+		return invalid(problems)
+	}
+	switch op {
+	case OpValidate:
+		return ok(ProblemsData{})
+	case OpPlan:
+		if plugin == Bash {
+			data := PlanData{ImagePrefix: "docker:"}
+			if cfg.SharedHost {
+				data.StageEnv = map[string]map[string]string{}
+				for _, stage := range sharedHostStages {
+					data.StageEnv[stage] = DotnetBuildServerEnv()
+				}
+			}
+			return ok(data)
+		}
+		file := yamlsection.NormalizePath(cfg.File)
+		data := PlanData{ImagePrefix: "compose:", Paths: map[string]string{"file": file}}
+		data.Steps = append(data.Steps, BuildStep{Stage: "build", Name: "compose:build", Exec: []string{"docker", "compose", "-f", file, "build"}})
+		if svc := cfg.TestService; svc != "" {
+			data.Steps = append(data.Steps, BuildStep{Stage: "test", Name: "compose:test", Exec: []string{"docker", "compose", "-f", file, "run", "--rm", svc}})
+		}
+		return ok(data)
+	}
+	return unknownOp(plugin, op)
+}

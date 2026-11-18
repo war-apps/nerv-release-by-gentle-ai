@@ -110,23 +110,24 @@ func TestProviders_UnknownProviderIsRefused(t *testing.T) {
 }
 
 // S7: a provider's keys are the ones its provider.yaml declares, of their
-// type; a release.providers entry names a shipped provider.
-//
-// NewBuildProvider's half of this nerv test (the bash build provider's
-// keys) is deferred to U4 with BuildProvider itself.
+// type; a release.providers entry names a shipped provider (now that
+// NewBuildProvider ships the build providers too, U4's shipped list
+// includes bash and docker-compose, not only the version engine).
 func TestProviders_KeysAreCheckedAgainstTheProvider(t *testing.T) {
 	p := testProviders(&recordingRunner{})
 	rel := &releaseconfig.Release{
+		Build: "bash",
 		Providers: map[string]map[string]any{
+			"bash":                 {"shared_host": "yes", "sdk": "8"},
 			"conventional-commits": {"branches": "main"},
 			"maven":                {},
 		},
-		Projects: []releaseconfig.Project{{Name: "api", Path: "."}},
+		Projects: []releaseconfig.Project{{Name: "api", Path: ".", Providers: map[string]map[string]any{"bash": {"shell": "pwsh"}}}},
 	}
 	_, err := NewVersionEngine(p, rel)
 	got := invalidProblems(t, err)
 	for _, want := range []string{
-		"release.providers.maven: unknown release provider (want conventional-commits)",
+		"release.providers.maven: unknown release provider (want bash, conventional-commits, docker-compose)",
 		"release.providers.conventional-commits.branches: must be a list",
 	} {
 		if !strings.Contains(got, want) {

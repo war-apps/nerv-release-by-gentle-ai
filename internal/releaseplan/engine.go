@@ -184,7 +184,74 @@ func answerError(resp provider.Response, err error) error {
 	return err
 }
 
-// BuildProvider (one project's build slot: NewBuildProvider, Validate,
-// Plan, BuildSteps) is deferred to U4, together with the build-plan
-// machinery it needs (internal/artifact, internal/releaserun) and the
-// build, deploy and provider CLI verbs.
+// BuildProvider is one project's build slot: its provider and the
+// provider's keys, resolved.
+type BuildProvider struct {
+	providers Providers
+	provider  *provider.Provider
+	config    map[string]any
+	payload   BuildPayload
+}
+
+// NewBuildProvider resolves the build provider of rel's project i:
+// release.projects[i].build, else release.build, with the provider's keys
+// (release.providers.<provider>, overridden by
+// release.projects[i].providers.<provider>). A missing or unknown provider
+// or a key it does not declare is a *releaseconfig.ValidationError.
+func NewBuildProvider(p Providers, rel *releaseconfig.Release, i int) (*BuildProvider, error) {
+	proj := rel.Projects[i]
+	at := fmt.Sprintf("%s.projects[%d]", releaseconfig.SectionKey, i)
+	selectedAt := at + ".build"
+	if proj.Build == "" {
+		selectedAt = releaseconfig.SectionKey + ".build"
+	}
+	name := rel.BuildProvider(proj)
+	if name == "" {
+		return nil, &releaseconfig.ValidationError{Problems: []string{fmt.Sprintf("%s.build: required by nerv-release build (the build provider: %s; or set release.build for every project): there is no default", at, orList(p.SlotProviders(SlotBuild)))}}
+	}
+	prov, err := p.Provider(SlotBuild, name, selectedAt)
+	if err != nil {
+		return nil, err
+	}
+	cfg, problems := providerConfig(prov,
+		configLayer{at: releaseconfig.SectionKey + ".providers." + prov.Name, values: rel.Providers[prov.Name]},
+		configLayer{at: at + ".providers." + prov.Name, values: proj.Providers[prov.Name]})
+	if len(problems) > 0 {
+		return nil, &releaseconfig.ValidationError{Problems: problems}
+	}
+	var stages []string
+	for _, stage := range releaseconfig.Stages {
+		if _, ok := proj.Stages[stage]; ok {
+			stages = append(stages, stage)
+		}
+	}
+	if stages == nil {
+		stages = []string{}
+	}
+	return &BuildProvider{providers: p, provider: prov, config: cfg, payload: BuildPayload{Project: proj.Name, At: at, Stages: stages}}, nil
+}
+
+// Name is the provider's name.
+func (b *BuildProvider) Name() string { return b.provider.Name }
+
+// Validate has the provider check its keys and the project's stages.
+func (b *BuildProvider) Validate(ctx context.Context) error {
+	return b.providers.validate(ctx, b.provider, b.config, b.payload)
+}
+
+// Plan asks the provider for the project's build steps.
+func (b *BuildProvider) Plan(ctx context.Context) (BuildSteps, error) {
+	var data PlanData
+	resp, err := b.providers.Call(ctx, b.provider, OpPlan, b.config, b.payload, &data)
+	if err != nil {
+		return BuildSteps{}, answerError(resp, err)
+	}
+	return BuildSteps{Provider: b.provider.Name, PlanData: data}, nil
+}
+
+// BuildSteps is a project's build as its provider planned it.
+type BuildSteps struct {
+	// Provider is the build provider's name.
+	Provider string
+	PlanData
+}
