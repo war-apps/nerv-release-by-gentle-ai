@@ -1,28 +1,39 @@
 package releaseclone
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestRedact(t *testing.T) {
-	tests := []struct{ in, want string }{
-		{"https://user:pass@github.com/a/b.git", "https://***@github.com/a/b.git"},
-		{"fatal: unable to access 'https://x-access-token:ghs_abc@github.com/a/b.git/': 403", "fatal: unable to access 'https://***@github.com/a/b.git/': 403"},
-		// A bare ssh username carries no network credential; an ssh URL
-		// with a password part does.
-		{"ssh://git@host:22/repo", "ssh://git@host:22/repo"},
-		{"ssh://git:s3cr3t@host:22/repo", "ssh://***@host:22/repo"},
-		// The userinfo runs up to the LAST '@' before the host: a
-		// password may itself contain '@'.
-		{"fatal: unable to access 'https://user:p@ss@github.com/a/b.git/': 403", "fatal: unable to access 'https://***@github.com/a/b.git/': 403"},
-		{"https://h/r.git?access_token=abc&ref=main", "https://h/r.git?access_token=***&ref=main"},
-		{"https://h/r?private_token=abc", "https://h/r?private_token=***"},
-		{"https://github.com/a/b.git", "https://github.com/a/b.git"},
-		{"git@github.com:a/b.git", "git@github.com:a/b.git"},
-		{"/srv/git/repo.git", "/srv/git/repo.git"},
+// redact itself moved into gitredact (its URL and Stderr are now the
+// package's only redaction); stderrTail, a call site of Stderr, must
+// still mask a secret-looking query parameter the same way userinfo is
+// masked, with nothing left redacting it a second time.
+func TestStderrTail_MasksSecretQueryParameters(t *testing.T) {
+	in := []byte("fatal: unable to access 'https://h/r.git?access_token=abc123&ref=main': 403")
+	got := stderrTail(in)
+	if strings.Contains(got, "abc123") {
+		t.Errorf("stderrTail(%q) leaks the query token: %q", in, got)
 	}
-	for _, tt := range tests {
-		if got := redact(tt.in); got != tt.want {
-			t.Errorf("redact(%q) = %q, want %q", tt.in, got, tt.want)
-		}
+	if !strings.Contains(got, "access_token=***") {
+		t.Errorf("stderrTail(%q) = %q, want the query token masked", in, got)
+	}
+}
+
+// pushAddress's refusal for an unsupported scheme names raw itself
+// (gitredact.URL, another call site of the package's only redaction);
+// it must mask a secret-looking query parameter the same way.
+func TestPushAddress_MasksSecretQueryParametersInTheRefusal(t *testing.T) {
+	raw := "ftp://example.com/w.git?token=abc123"
+	_, err := pushAddress(raw, raw)
+	if err == nil {
+		t.Fatal("want an error for an unsupported scheme")
+	}
+	if strings.Contains(err.Error(), "abc123") {
+		t.Errorf("pushAddress error leaks the query token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "token=***") {
+		t.Errorf("pushAddress error = %v, want the query token masked", err)
 	}
 }
 

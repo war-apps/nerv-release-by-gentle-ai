@@ -136,9 +136,10 @@ func publicURL(raw string) string {
 }
 
 // stderrTail returns the last lines of a process's stderr, for errors, with
-// URL credentials redacted (git echoes the URL it failed to read).
+// URL credentials redacted (git echoes the URL it failed to read), via
+// gitredact: this package's only redaction.
 func stderrTail(stderr []byte) string {
-	text := strings.TrimSpace(redact(string(stderr)))
+	text := strings.TrimSpace(gitredact.Stderr(string(stderr)))
 	if text == "" {
 		return ""
 	}
@@ -147,19 +148,4 @@ func stderrTail(stderr []byte) string {
 		lines = lines[len(lines)-15:]
 	}
 	return "\n" + strings.Join(lines, "\n")
-}
-
-// secretQueryRe matches a URL query parameter whose name says it holds a
-// secret (token, access_token, private_token, password, secret, key, sig).
-var secretQueryRe = regexp.MustCompile(`(?i)([?&][a-z0-9_.-]*(?:token|password|passwd|secret|key|sig)[a-z0-9_.-]*=)[^&\s'"#]+`)
-
-// redact hides the credentials of every URL in s: secret userinfo
-// (https://user:token@host -> https://***@host, via gitredact, which
-// leaves a bare ssh username, git's own login-name convention,
-// unchanged) and secret-looking query values (?access_token=x ->
-// ?access_token=***). Every command string and process output put in an
-// error goes through it.
-func redact(s string) string {
-	s = gitredact.Stderr(s)
-	return secretQueryRe.ReplaceAllString(s, "${1}***")
 }

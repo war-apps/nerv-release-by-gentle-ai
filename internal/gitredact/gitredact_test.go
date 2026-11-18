@@ -82,3 +82,72 @@ func TestStderr_FullyMasksAPasswordContainingAt(t *testing.T) {
 		t.Errorf("Stderr = %q, want %q", got, want)
 	}
 }
+
+// A secret-looking query parameter (?access_token=..., ?token=...,
+// ?password=...) must be masked the same way userinfo is: a CI remote or
+// a git provider's API can carry its credential there instead of in
+// userinfo, and nothing downstream should have to redact it again.
+func TestURL_MasksSecretQueryParameters(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"https://github.com/acme/widgets.git?access_token=ghs_abc123", "https://github.com/acme/widgets.git?access_token=***"},
+		{"https://github.com/acme/widgets.git?token=abc&ref=main", "https://github.com/acme/widgets.git?token=***&ref=main"},
+		{"https://bot:s3cr3t@github.com/acme/widgets.git?password=hunter2", "https://***@github.com/acme/widgets.git?password=***"},
+		// Not secret-looking: left alone.
+		{"https://github.com/acme/widgets.git?ref=main", "https://github.com/acme/widgets.git?ref=main"},
+	}
+	for _, tt := range tests {
+		if got := URL(tt.in); got != tt.want {
+			t.Errorf("URL(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// Stderr must mask the same secret-looking query parameters as URL,
+// wherever they appear in free text.
+func TestStderr_MasksSecretQueryParameters(t *testing.T) {
+	in := "fatal: unable to access 'https://github.com/a/b.git?access_token=ghs_abc&ref=main': 403"
+	want := "fatal: unable to access 'https://github.com/a/b.git?access_token=***&ref=main': 403"
+	if got := Stderr(in); got != want {
+		t.Errorf("Stderr(%q) = %q, want %q", in, got, want)
+	}
+}
+
+// When net/url finds secret userinfo, URL must rebuild the masked output
+// from the parts it already parsed (scheme, host, path, query,
+// fragment), never by re-running Stderr's free-text regex over raw. That
+// regex finds userinfo by scanning for "the last '@' before the first
+// '/'", a heuristic with nothing to bound it when the URL has no path
+// and its query itself contains '@' (a mailto: value, another embedded
+// URL, ...): it would then wrongly swallow the real host into the masked
+// run instead of leaving it as it is.
+func TestURL_RebuildsFromParsedPartsInsteadOfReapplyingTheRegex(t *testing.T) {
+	in := "https://user:pass@host.example?redirect=mailto:a@b.com"
+	want := "https://***@host.example?redirect=mailto:a@b.com"
+	if got := URL(in); got != want {
+		t.Errorf("URL(%q) = %q, want %q (a regex re-scan would wrongly swallow the host)", in, got, want)
+	}
+}
+
+// Stderr's userinfo match must not exclude spaces or quotes from the
+// class that finds "the last '@' before the first '/'": doing so lets a
+// userinfo containing either of those characters (a token with a quote
+// in it, or a credential git echoes with a space inside it) through
+// completely unmasked, because the whole match then fails to find any
+// contiguous run ending right before the real '@'.
+func TestStderr_MasksUserinfoContainingSpaceOrQuote(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{
+			"fatal: unable to access 'https://us er:tok@host/a/b.git/': 403",
+			"fatal: unable to access 'https://***@host/a/b.git/': 403",
+		},
+		{
+			`fatal: unable to access 'https://user:to"ken@host/a/b.git/': 403`,
+			"fatal: unable to access 'https://***@host/a/b.git/': 403",
+		},
+	}
+	for _, tt := range tests {
+		if got := Stderr(tt.in); got != tt.want {
+			t.Errorf("Stderr(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

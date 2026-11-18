@@ -66,6 +66,27 @@ func TestWorkspaceClone_RedactsCredentialsFromURLAndStderr(t *testing.T) {
 	}
 }
 
+// A CI remote's URL can also carry a secret in a query parameter
+// (?access_token=...), not just userinfo; clone() must mask that too,
+// in both the URL argument and git's stderr, through the same gitredact
+// call sites that already mask userinfo.
+func TestWorkspaceClone_RedactsSecretQueryParameters(t *testing.T) {
+	credentialed := "https://github.com/acme/widgets.git?access_token=" + credentialSecret
+	stderr := "fatal: unable to access '" + credentialed + "/': Failed to connect to github.com port 443"
+	w := workspace{runner: fakeRunner{result: proc.Result{Stderr: []byte(stderr)}, err: errors.New("exit status 128")}, dir: t.TempDir()}
+
+	err := w.clone(context.Background(), credentialed, "main")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if strings.Contains(err.Error(), credentialSecret) {
+		t.Errorf("clone() leaks the query token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "access_token=***") {
+		t.Errorf("clone() does not redact the query token: %v", err)
+	}
+}
+
 // git's scp-like ssh syntax (git@host:org/repo) carries no network
 // credential (at most a username): git() and clone() must leave it, and
 // any stderr naming it, exactly as they are.

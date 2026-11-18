@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/gitredact"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/proc"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseconfig"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseplan"
@@ -184,9 +185,9 @@ func (w *Workspace) init(ctx context.Context, top string, envv []string, realURL
 	switch {
 	case err == nil:
 	case errors.Is(fctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
-		return fmt.Errorf("reading origin (%s) timed out after %s: %w", redact(w.pushURL), w.timeout, ErrOriginFetch)
+		return fmt.Errorf("reading origin (%s) timed out after %s: %w", gitredact.URL(w.pushURL), w.timeout, ErrOriginFetch)
 	default:
-		return fmt.Errorf("reading origin (%s): %w: %w", redact(w.pushURL), ErrOriginFetch, err)
+		return fmt.Errorf("reading origin (%s): %w: %w", gitredact.URL(w.pushURL), ErrOriginFetch, err)
 	}
 	ref := "refs/remotes/origin/" + w.branch
 	// rev-parse --verify --quiet exits 1 when origin has no such branch.
@@ -216,7 +217,7 @@ func (w *Workspace) git(ctx context.Context, dir string, envv []string, args ...
 	c := proc.Command{Name: "git", Args: append([]string{"-C", dir}, args...), Env: envv}
 	res, err := w.runner.Run(ctx, c)
 	if err != nil {
-		return strings.TrimSpace(string(res.Stdout)), fmt.Errorf("%s: %w%s", redact(c.String()), err, stderrTail(res.Stderr))
+		return strings.TrimSpace(string(res.Stdout)), fmt.Errorf("%s: %w%s", gitredact.Stderr(c.String()), err, stderrTail(res.Stderr))
 	}
 	return strings.TrimSpace(string(res.Stdout)), nil
 }
@@ -339,7 +340,7 @@ func pushAddress(raw, resolved string) (string, error) {
 	if isLocalRemote(raw) {
 		return resolved, nil
 	}
-	return "", fmt.Errorf("origin's URL (%s) is neither a network address (https, ssh, git) nor a local path: nerv release cannot read it", redact(raw))
+	return "", fmt.Errorf("origin's URL (%s) is neither a network address (https, ssh, git) nor a local path: nerv release cannot read it", gitredact.URL(raw))
 }
 
 // isLocalRemote reports whether a remote URL is a local repository: a path
