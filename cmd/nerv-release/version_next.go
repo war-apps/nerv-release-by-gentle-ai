@@ -181,9 +181,9 @@ func runVersionNext(args []string, stdout, stderr io.Writer, opts options) int {
 	if err == nil {
 		err = shape.Engine.Validate(ctx)
 	}
-	// Unlike nerv, there is no cross-check of every project's build
-	// provider here: releaseplan.NewBuildProvider is deferred to U4, with
-	// the build, deploy and provider CLI verbs.
+	if err == nil && shape.Release != nil {
+		_, err = checkBuilds(ctx, providers, shape.Release, false)
+	}
 	if err != nil {
 		return report(err)
 	}

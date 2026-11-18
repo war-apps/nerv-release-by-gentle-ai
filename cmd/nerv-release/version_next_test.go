@@ -982,7 +982,7 @@ func TestVersionNext_RefusesTheAlphaShipSection(t *testing.T) {
 // U4), so naming a build provider this engine does not ship yet is fine
 // here.
 func TestVersionNext_CurrentSectionStillComputes(t *testing.T) {
-	f := newNextFixture(t, "release:\n  providers:\n    conventional-commits: { branches: [main] }\n  projects:\n    - { name: api, path: ., build: docker-compose }\n")
+	f := newNextFixture(t, "release:\n  providers:\n    conventional-commits: { branches: [main] }\n  projects:\n    - { name: api, path: ., build: docker-compose, providers: { docker-compose: { file: c.yml } } }\n")
 	f.results = []versioning.Result{released("api", "1.2.0", "")}
 	code, stdout, stderr := f.run(t, "--json")
 	if code != 0 || !strings.Contains(stdout, `"1.2.0"`) || len(f.calls) != 1 {

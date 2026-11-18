@@ -8,29 +8,34 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/war-apps/nerv-kit-by-gentle-ai/runner"
 	nervrelease "github.com/war-apps/nerv-release-by-gentle-ai"
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/deploy"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/proc"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseclone"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseplan"
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaserun"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/versioning"
 )
 
 // usage lists every verb R-S2 plans for nerv-release
-// (odd/tasks/initial-release.md). Only "version next" works today (U2);
-// the others print a not-implemented-yet notice.
+// (odd/tasks/initial-release.md). "version next", "build", "deploy" and
+// "setup" work today (U2-U4); the tool commands print a not-implemented
+// notice until U6.
 const usage = `Usage: nerv-release <command> [flags]
 
 Engine commands:
   version next [flags]  Compute the next release version with the native
                          engine (see "nerv-release version next --help")
   build [flags]          Build, test and package origin's code into a local
-                         artifact, no git writes (not implemented yet)
+                         artifact, no git writes (see "nerv-release build --help")
   deploy --artifact <dir> [flags]
-                         Release and deploy a release artifact (not
-                         implemented yet)
+                         Release and deploy a release artifact (see
+                         "nerv-release deploy --help")
   setup --import [--force] [--dry-run]
                          Import a semantic-release configuration into the
                          release: section (see "nerv-release setup --help")
@@ -46,8 +51,7 @@ Tool commands (not implemented yet):
 
 // options bundles nerv-release's external effects so run can be exercised
 // end to end against fakes: main fills the real ones, tests fill scripted
-// ones. It only carries what `version next` (U2) needs; later units add
-// the fields their own verbs need.
+// ones.
 type options struct {
 	// ExtensionsFS holds the release extension and its providers; nil
 	// means the embedded tree (nervrelease.ExtensionsFS()).
@@ -56,12 +60,17 @@ type options struct {
 	// runner.ExecRunner.
 	Runner runner.Runner
 	// ReleaseProc runs the release extension's provider steps (the
-	// version engine's `nerv-release provider release-<name>
+	// version and build providers' `nerv-release provider release-<name>
 	// <operation>`); nil means proc.ExecRunner.
 	ReleaseProc proc.Runner
+	// DeployProc runs the deploy providers' commands (nerv-release
+	// deploy's host and target providers, and the native ssh-compose and
+	// script operations); nil means proc.ExecRunner.
+	DeployProc proc.Runner
 	// Stdin is the hidden `provider` command's request source, when this
 	// process is re-invoked as one of its own provider steps
-	// (nativeRelease); nil means os.Stdin.
+	// (nativeRelease), and the confirmation prompts' source; nil means
+	// os.Stdin.
 	Stdin io.Reader
 	// ComputeVersions is the `nerv-release version next` engine
 	// (releaseclone.Compute); tests inject a recorded fake. Nil means
@@ -72,6 +81,26 @@ type options struct {
 	// stop function and the signal received (nil if none). Tests inject
 	// a controllable one. Nil means signalContext.
 	SignalContext func(context.Context) (context.Context, context.CancelFunc, func() os.Signal)
+	// OpenReleaseWorkspace opens the release clone `nerv-release build`
+	// works in; nil means releaseclone.New. Tests inject a fake.
+	OpenReleaseWorkspace func(context.Context, releaseclone.Options) (releaseWorkspace, error)
+	// ReleaseSteps returns the step runner `nerv-release build` runs the
+	// pipeline with, given the release clone's root and where to stream
+	// output; nil means a *releaserun.Runner.
+	ReleaseSteps func(root string, out io.Writer) releaseplan.StepRunner
+	// IsTerminal reports whether stdin is attached to a real interactive
+	// terminal (confirmation prompts); nil means stdinIsTerminal.
+	IsTerminal func() bool
+	// Home overrides the resolved home directory (the user's global
+	// release.yaml, deploy.md). Empty means runner.HomeDir() decides. Not
+	// a public flag: settable only here, only for tests.
+	Home string
+	// Getenv reads an environment variable (release-ssh-compose's
+	// NERV_DEPLOY_* variables); nil means a function always returning "".
+	Getenv func(string) string
+	// DeploySleep is release-ssh-compose's poll sleep (verify's health
+	// wait); nil means time.Sleep.
+	DeploySleep func(context.Context, time.Duration) error
 }
 
 func defaultOptions() options {
@@ -80,6 +109,10 @@ func defaultOptions() options {
 		Stdin:           os.Stdin,
 		ComputeVersions: releaseclone.Compute,
 		SignalContext:   signalContext,
+		IsTerminal:      stdinIsTerminal,
+		ReleaseSteps: func(root string, out io.Writer) releaseplan.StepRunner {
+			return &releaserun.Runner{RepoRoot: root, Output: out}
+		},
 	}
 }
 
@@ -115,7 +148,11 @@ func run(args []string, stdout, stderr io.Writer, opts options) int {
 		return runProvider(args[1:], stdout, stderr, opts)
 	case "setup":
 		return runReleaseSetup(args[1:], stdout, stderr, opts)
-	case "build", "deploy", "install", "upgrade", "configure", "init":
+	case "build":
+		return runBuild(args[1:], stdout, stderr, opts)
+	case "deploy":
+		return runDeploy(args[1:], stdout, stderr, opts)
+	case "install", "upgrade", "configure", "init":
 		fmt.Fprintf(stderr, "nerv-release %s: not implemented yet\n", args[0])
 		return 2
 	default:
@@ -129,16 +166,17 @@ func run(args []string, stdout, stderr io.Writer, opts options) int {
 // whose provider.yaml steps run the hidden `nerv-release provider
 // <plugin> <operation>` with the common request on stdin and the response
 // on stdout.
-//
-// Only the version engine (release-conventional-commits) is wired up
-// today; the native build providers (release-docker-compose, release-bash)
-// and the deploy providers are deferred to U4/U5.
 var nativeProviders = map[string]func(op string, stdout, stderr io.Writer, opts options) int{
 	releaseplan.ConventionalCommits: nativeRelease(releaseplan.ConventionalCommits),
+	releaseplan.DockerCompose:       nativeRelease(releaseplan.DockerCompose),
+	releaseplan.Bash:                nativeRelease(releaseplan.Bash),
+	"release-script":                runDeployScript,
+	"release-ssh-compose":           runDeploySSHCompose,
 }
 
-// nativeRelease runs one operation of a native release provider: today,
-// only the version engine (conventional-commits).
+// nativeRelease runs one operation of a native release provider: the
+// version engine (conventional-commits) or a build provider
+// (docker-compose, bash).
 func nativeRelease(plugin string) func(op string, stdout, stderr io.Writer, opts options) int {
 	return func(op string, stdout, stderr io.Writer, opts options) int {
 		stdin := opts.Stdin
@@ -155,6 +193,55 @@ func nativeRelease(plugin string) func(op string, stdout, stderr io.Writer, opts
 	}
 }
 
+// runDeployScript runs one operation of the release-script target
+// provider: the project's own deploy script, taken from the release
+// commit.
+func runDeployScript(op string, stdout, stderr io.Writer, opts options) int {
+	stdin := opts.Stdin
+	if stdin == nil {
+		stdin = strings.NewReader("")
+	}
+	signalCtx := opts.SignalContext
+	if signalCtx == nil {
+		signalCtx = signalContext
+	}
+	ctx, stop, _ := signalCtx(context.Background())
+	defer stop()
+	return deploy.RunBashOp(ctx, op, stdin, stdout, deploy.BashDeps{Output: stderr})
+}
+
+// runDeploySSHCompose runs one operation of the release-ssh-compose
+// provider (preflight, deploy or verify): the request on stdin, the JSON
+// response on stdout.
+func runDeploySSHCompose(op string, stdout, stderr io.Writer, opts options) int {
+	home, err := resolveHome(opts.Home)
+	if err != nil {
+		fmt.Fprintf(stderr, "nerv-release provider release-ssh-compose: %v\n", err)
+		return 2
+	}
+	var runner proc.Runner = proc.ExecRunner{}
+	if opts.DeployProc != nil {
+		runner = opts.DeployProc
+	}
+	getenv := opts.Getenv
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	stdin := opts.Stdin
+	if stdin == nil {
+		stdin = strings.NewReader("")
+	}
+	signalCtx := opts.SignalContext
+	if signalCtx == nil {
+		signalCtx = signalContext
+	}
+	ctx, stop, _ := signalCtx(context.Background())
+	defer stop()
+	return deploy.RunComposeOp(ctx, op, stdin, stdout, deploy.ComposeDeps{
+		Proc: runner, Getenv: getenv, Home: home, Output: stderr, Sleep: opts.DeploySleep,
+	})
+}
+
 // runProvider is the hidden `nerv-release provider <extension>-<name>
 // <operation>`.
 func runProvider(args []string, stdout, stderr io.Writer, opts options) int {
@@ -168,10 +255,20 @@ func runProvider(args []string, stdout, stderr io.Writer, opts options) int {
 		for name := range nativeProviders {
 			names = append(names, name)
 		}
-		fmt.Fprintf(stderr, "nerv-release provider: %q is not a native provider yet (%s)\n", args[0], strings.Join(names, ", "))
+		slices.Sort(names)
+		fmt.Fprintf(stderr, "nerv-release provider: %q is not a native provider (%s)\n", args[0], strings.Join(names, ", "))
 		return 2
 	}
 	return run(args[1], stdout, stderr, opts)
+}
+
+// resolveHome is the user's home directory, or override when not empty
+// (options.Home: settable only there, only for tests).
+func resolveHome(override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	return runner.HomeDir()
 }
 
 // releaseProviders calls the release extension's providers from the
