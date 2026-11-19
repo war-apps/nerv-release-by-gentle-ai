@@ -50,30 +50,12 @@ jobs:
         shell: bash
         run: go build ./...
 
-      # TODO(U8): internal/deployrun is excluded here because two of its
-      # tests (TestRun_PublishesTheImagesWithoutTargets,
-      # TestRun_SkipsThePublishWithoutImages) run the REAL docker/gh of
-      # whatever machine executes them (L8, odd/tasks/initial-release.md);
-      # on a CI runner that means the runner's own docker/gh, with no
-      # developer credentials at risk but still a real, unfaked external
-      # process from a unit test. U8 isolates internal/deployrun with
-      # fakes first on PATH (or an injected runner) so it never reaches a
-      # real docker/gh, then this exclusion is removed and the package
-      # re-enabled on both OSes.
-      #
-      # Every other package runs here, including the ones with known L5
-      # Windows failures (releaserun pwsh CR stripping, deploy backslash
-      # paths, releaseplan non-absolute fixture paths, deployrun's
-      # #!/bin/sh fake binary, cmd/nerv-release's unquoted backslash
-      # redirects): R-S9 makes a fully green Windows run a 1.0.0 gate, so
-      # those failures stay visible (red) here on purpose until U8 fixes
-      # them, instead of being skipped.
-      - name: go test (excludes internal/deployrun; see TODO above)
+      # Every package runs on both OSes: R-S9 makes a fully green Windows
+      # run a 1.0.0 gate. internal/deployrun drives real git through many
+      # processes and takes minutes on Windows, hence the longer timeout.
+      - name: go test
         shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t pkgs < <(go list ./... | grep -v '/internal/deployrun$')
-          go test -count=1 "${pkgs[@]}"
+        run: go test -count=1 -timeout 20m ./...
 
       - name: install.ps1 tests (Windows PowerShell 5.1)
         if: runner.os == 'Windows'

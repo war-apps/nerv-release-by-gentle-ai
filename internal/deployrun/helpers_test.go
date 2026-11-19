@@ -14,42 +14,10 @@ import (
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/deployconfig"
 )
 
-// fakeTool records its name, argv and stdin, and answers as the real tool
-// would for what deploy runs: gh release view/create keep a release per
-// tag in the fake's directory; docker push fails while fail-push exists;
-// a nerv-release provider operation answers failed while fail-<operation> exists;
-// the fake nerv-release runs the real release-ssh-compose preflight and every real
-// release-script operation (the test binary, see TestMain), and prints an ok
-// response for any other operation.
-const fakeTool = `#!/bin/sh
-name=$(basename "$0")
-{ printf '%s' "$name"; for a in "$@"; do printf ' [%s]' "$a"; done; printf '\n'; } >> "$FAKE_DIR/log"
-cat > "$FAKE_DIR/$name.stdin"
-case "$name" in
-gh)
-  if [ "$2" = view ]; then
-    [ -f "$FAKE_DIR/release-$3" ] && exit 0
-    echo "release not found" >&2; exit 1
-  fi
-  [ "$2" = create ] && touch "$FAKE_DIR/release-$3"
-  ;;
-docker)
-  if [ "$1" = push ] && [ -f "$FAKE_DIR/fail-push" ]; then echo "denied: push access" >&2; exit 1; fi
-  ;;
-nerv-release)
-  if [ "$1" = provider ] && { [ "$3" = preflight ] || [ "$2" = release-script ]; }; then
-    NERV_FAKE_PROVIDER=1 exec "$NERV_TEST_BINARY" "$@" < "$FAKE_DIR/nerv-release.stdin"
-  fi
-  if [ -f "$FAKE_DIR/fail-$3" ]; then echo '{"status":"failed","message":"'"$3"' broke"}'; exit 0; fi
-  echo '{"status":"ok","message":"'"$3"' done"}'
-  ;;
-esac
-exit 0
-`
-
 // world is one test's world: a bare origin, the user's clone of it (with
 // files, when given, in its first commit), an artifact of the clone's
-// develop head, and fake gh, docker, ssh and nerv-release on PATH.
+// develop head, and fake gh, docker, ssh and nerv-release (see TestMain)
+// first on PATH, recording in the world's fake directory.
 type world struct {
 	t                  *testing.T
 	origin, repo, fake string
@@ -114,17 +82,12 @@ func newEnv(t *testing.T, files ...map[string]string) *world {
 	git(t, e.repo, "checkout", "-q", "-b", "develop", "origin/develop")
 	e.base = git(t, e.repo, "rev-parse", "HEAD")
 
-	bin := filepath.Join(e.fake, "bin")
-	for _, tool := range []string{"gh", "docker", "ssh", "sshpass", "nerv-release"} {
-		writeFile(t, filepath.Join(bin, tool), fakeTool, 0o755)
+	if err := os.MkdirAll(e.fake, 0o755); err != nil {
+		t.Fatal(err)
 	}
 	t.Setenv("FAKE_DIR", e.fake)
-	exe, exeErr := os.Executable()
-	if exeErr != nil {
-		t.Fatal(exeErr)
-	}
-	t.Setenv("NERV_TEST_BINARY", exe)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	requireFakes(t)
 	e.dockerConfig(`{"auths":{"reg.example":{"auth":"dXNlcjpwYXNz"}}}`)
 
 	e.writeArtifact([]string{"reg.example/app:1.0.0-alpha.1"}, "app.tar")
@@ -174,7 +137,20 @@ func (e *world) dockerConfig(config string) {
 func (e *world) options() Options {
 	return Options{
 		RepoRoot: e.repo, ArtifactDir: e.dir, Config: e.cfg, Providers: nervrelease.ExtensionsFS(),
-		NervRelease: filepath.Join(e.fake, "bin", "nerv-release"), Output: io.Discard,
+		NervRelease: filepath.Join(fakeBin, "nerv-release"+exeSuffix()), Output: io.Discard,
+	}
+}
+
+// requireFakes stops the test unless every fake tool resolves on PATH to
+// its fake: a test must never reach the developer's real docker, gh or ssh
+// with their credentials.
+func requireFakes(t *testing.T) {
+	t.Helper()
+	for _, tool := range fakeTools {
+		path, err := exec.LookPath(tool)
+		if err != nil || filepath.Dir(path) != fakeBin {
+			t.Fatalf("refusing to run: %s resolves to %q (%v), not to its fake in %s", tool, path, err, fakeBin)
+		}
 	}
 }
 
