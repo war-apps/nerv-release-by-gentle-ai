@@ -1,7 +1,9 @@
 package versionfile_test
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -120,6 +122,9 @@ func TestResolveRejects(t *testing.T) {
 		{"empty path", versionfile.Spec{}, []string{"path"}},
 		{"absolute path", versionfile.Spec{Path: "/etc/VERSION"}, []string{"/etc/VERSION", "relative"}},
 		{"parent path", versionfile.Spec{Path: "../VERSION"}, []string{"../VERSION"}},
+		{"backslash parent path", versionfile.Spec{Path: `..\VERSION`}, []string{`..\VERSION`, "backslash"}},
+		{"backslash path", versionfile.Spec{Path: `web\package.json`}, []string{`web\package.json`, "backslash"}},
+		{"path escaping after cleaning", versionfile.Spec{Path: "web/./../../VERSION"}, []string{"web/./../../VERSION"}},
 		{"unknown file without format", versionfile.Spec{Path: "app/meta.cfg"}, []string{"app/meta.cfg", "format"}},
 		{"unknown format", versionfile.Spec{Path: "a.ini", Format: "ini"}, []string{"ini"}},
 		{"explicit json without keys", versionfile.Spec{Path: "app.json", Format: "json"}, []string{"app.json", "keys"}},
@@ -543,4 +548,104 @@ func TestWriteLeavesTheFileUnchangedOnError(t *testing.T) {
 func TestWriteMissingFileFails(t *testing.T) {
 	err := versionfile.Write(t.TempDir(), versionfile.Spec{Path: "VERSION"}, "1.0.0")
 	wantErrContains(t, err, "VERSION")
+}
+
+// symlink creates link -> target, skipping the test only when the OS
+// refuses to create symlinks (Windows without the privilege).
+func symlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+}
+
+func TestWriteRefusesASymlinkedFileAndLeavesItsTargetUnchanged(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	target := filepath.Join(outside, "VERSION")
+	if err := os.WriteFile(target, []byte("1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, target, filepath.Join(root, "VERSION"))
+	err := versionfile.Write(root, versionfile.Spec{Path: "VERSION"}, "2.0.0")
+	wantErrContains(t, err, "VERSION", "symlink")
+	if got, _ := os.ReadFile(target); string(got) != "1.0.0\n" {
+		t.Errorf("outside target = %q, want it unchanged", got)
+	}
+}
+
+func TestWriteRefusesASymlinkedParentDirectory(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	target := filepath.Join(outside, "package.json")
+	if err := os.WriteFile(target, []byte("{\"version\": \"1.0.0\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, outside, filepath.Join(root, "web"))
+	err := versionfile.Write(root, versionfile.Spec{Path: "web/package.json"}, "2.0.0")
+	wantErrContains(t, err, "web/package.json", "symlink", "web")
+	if got, _ := os.ReadFile(target); string(got) != "{\"version\": \"1.0.0\"}\n" {
+		t.Errorf("outside target = %q, want it unchanged", got)
+	}
+}
+
+// A Windows junction is not reported as a symlink (os.ModeIrregular): a
+// parent component must be a plain directory.
+func TestWriteRefusesAJunctionedParentDirectory(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("junctions exist on Windows only")
+	}
+	root, outside := t.TempDir(), t.TempDir()
+	target := filepath.Join(outside, "package.json")
+	if err := os.WriteFile(target, []byte("{\"version\": \"1.0.0\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", filepath.Join(root, "junc"), outside).CombinedOutput(); err != nil {
+		t.Fatalf("mklink /J: %v\n%s", err, out)
+	}
+	err := versionfile.Write(root, versionfile.Spec{Path: "junc/package.json"}, "2.0.0")
+	wantErrContains(t, err, "junc/package.json", "junc")
+	if got, _ := os.ReadFile(target); string(got) != "{\"version\": \"1.0.0\"}\n" {
+		t.Errorf("outside target = %q, want it unchanged", got)
+	}
+}
+
+func TestReadFileRefusesASymlinkAndANonRegularFile(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret"), []byte("s"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := versionfile.ReadFile(root, "dir")
+	wantErrContains(t, err, "dir", "regular file")
+	symlink(t, filepath.Join(outside, "secret"), filepath.Join(root, "lock.json"))
+	_, err = versionfile.ReadFile(root, "lock.json")
+	wantErrContains(t, err, "lock.json", "symlink")
+}
+
+func TestReadFileReadsARegularFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "VERSION"), []byte("1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := versionfile.ReadFile(root, "a/VERSION")
+	if err != nil || string(got) != "1.0.0\n" {
+		t.Fatalf("ReadFile = %q, %v", got, err)
+	}
+	_, err = versionfile.ReadFile(root, "a/missing")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("missing file error = %v, want os.ErrNotExist", err)
+	}
+}
+
+func TestMSBuildExtensionsAreTheInferredOnes(t *testing.T) {
+	for _, ext := range versionfile.MSBuildExtensions {
+		r, err := versionfile.Resolve(versionfile.Spec{Path: "src/App" + ext})
+		if err != nil || r.Format != versionfile.FormatMSBuild {
+			t.Errorf("%s: format %q, %v; want msbuild", ext, r.Format, err)
+		}
+	}
 }

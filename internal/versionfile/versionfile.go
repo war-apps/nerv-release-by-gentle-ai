@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/war-apps/nerv-kit-by-gentle-ai/atomicfile"
+
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/refusal"
 )
 
 // Spec is one version file edit.
@@ -53,8 +55,9 @@ const StylePEP440 = "pep440"
 
 var formats = []string{FormatMSBuild, FormatJSON, FormatTOML, FormatYAML, FormatXML, FormatProperties, FormatText, FormatRegex}
 
-// msbuildExtensions mirror releaseconfig.VersionFileExtensions.
-var msbuildExtensions = []string{".csproj", ".fsproj", ".vbproj", ".props", ".targets"}
+// MSBuildExtensions are the extensions of the MSBuild project files whose
+// format is inferred as msbuild (releaseplan.WriteCsproj writes them).
+var MSBuildExtensions = []string{".csproj", ".fsproj", ".vbproj", ".props", ".targets"}
 
 // known is a file whose format and keys are inferred from its base name.
 type known struct {
@@ -83,10 +86,37 @@ func lookup(p string) (known, bool) {
 	if k, ok := knownFiles[base]; ok {
 		return k, true
 	}
-	if slices.Contains(msbuildExtensions, path.Ext(base)) {
+	if slices.Contains(MSBuildExtensions, path.Ext(base)) {
 		return known{format: FormatMSBuild}, true
 	}
 	return known{}, false
+}
+
+// pathProblem says why p is not a repository-relative forward-slash path
+// that stays inside the repository on every OS, or "".
+func pathProblem(p string) string {
+	switch {
+	case strings.Contains(p, `\`):
+		return "path must use forward slashes, not a backslash"
+	case path.IsAbs(p) || filepath.IsAbs(p) || filepath.VolumeName(p) != "" ||
+		slices.Contains(strings.Split(p, "/"), "..") || !filepath.IsLocal(filepath.FromSlash(path.Clean(p))):
+		return "path must be relative to the repository, without .."
+	}
+	return ""
+}
+
+// CheckRelative returns an error naming p when it is not a
+// repository-relative forward-slash path inside the repository (the path
+// rule Resolve applies, for files that are not version files, such as a
+// version_files command's files).
+func CheckRelative(p string) error {
+	if p == "" {
+		return errors.New("version file: path is empty")
+	}
+	if problem := pathProblem(p); problem != "" {
+		return fmt.Errorf("version file %s: %s", p, problem)
+	}
+	return nil
 }
 
 // Resolve fills Format and default Keys from Path when empty, and validates
@@ -95,12 +125,8 @@ func lookup(p string) (known, bool) {
 // copy or an error naming the problem.
 func Resolve(s Spec) (Spec, error) {
 	s.Keys = slices.Clone(s.Keys)
-	if s.Path == "" {
-		return s, errors.New("version file: path is empty")
-	}
-	if path.IsAbs(s.Path) || filepath.IsAbs(s.Path) || filepath.VolumeName(s.Path) != "" ||
-		slices.Contains(strings.Split(s.Path, "/"), "..") {
-		return s, fmt.Errorf("version file %s: path must be relative to the repository, without ..", s.Path)
+	if err := CheckRelative(s.Path); err != nil {
+		return s, err
 	}
 	if s.Style != "" && s.Style != StylePEP440 {
 		return s, fmt.Errorf("version file %s: unknown style %q (only %q)", s.Path, s.Style, StylePEP440)
@@ -233,13 +259,18 @@ func Apply(content []byte, s Spec, version string) ([]byte, error) {
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 // Write applies the spec to root/Path and replaces the file atomically,
-// keeping its permission bits; on any error the file is unchanged.
+// keeping its permission bits; on any error the file is unchanged. It
+// refuses a file reached through a symlink, or not regular (CheckPath).
 func Write(root string, s Spec, version string) error {
-	file := filepath.Join(root, filepath.FromSlash(s.Path))
-	content, err := os.ReadFile(file)
+	s, err := Resolve(s)
 	if err != nil {
-		return fmt.Errorf("version file %s: %w", s.Path, err)
+		return err
 	}
+	content, err := ReadFile(root, s.Path)
+	if err != nil {
+		return err
+	}
+	file := filepath.Join(root, filepath.FromSlash(s.Path))
 	out, err := Apply(content, s, version)
 	if err != nil {
 		return err
@@ -411,4 +442,52 @@ func parseKey(format, key string) ([]string, error) {
 		return []string{strings.Join(segs, ".")}, nil
 	}
 	return segs, nil
+}
+
+// CheckPath refuses (a *refusal.Error naming rel) a repository file the
+// release would read or write through a symlink: every component of rel
+// under root is Lstat'ed and must not be a symlink, and rel, when it
+// exists, must be a regular file. A repository is untrusted: a committed
+// symlink must not let the release clone read or overwrite a file outside
+// it. A missing component is not refused (the caller's read reports it).
+func CheckPath(root, rel string) error {
+	if problem := pathProblem(rel); problem != "" {
+		return &refusal.Error{Err: fmt.Errorf("version file %s: %s", rel, problem)}
+	}
+	dir := root
+	parts := strings.Split(rel, "/")
+	for i, part := range parts {
+		dir = filepath.Join(dir, part)
+		info, err := os.Lstat(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return &refusal.Error{Err: fmt.Errorf("version file %s: cannot check %s for a symlink: %v", rel, part, err)}
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return &refusal.Error{Err: fmt.Errorf("version file %s is reached through the symlink %s in the repository", rel, strings.Join(parts[:i+1], "/"))}
+		}
+		if i == len(parts)-1 && !info.Mode().IsRegular() {
+			return &refusal.Error{Err: fmt.Errorf("version file %s is not a regular file", rel)}
+		}
+		// A Windows junction is os.ModeIrregular, not a symlink: a parent
+		// must be a plain directory.
+		if i < len(parts)-1 && !info.IsDir() {
+			return &refusal.Error{Err: fmt.Errorf("version file %s is reached through %s, which is not a plain directory", rel, strings.Join(parts[:i+1], "/"))}
+		}
+	}
+	return nil
+}
+
+// ReadFile reads the repository file rel under root after CheckPath.
+func ReadFile(root, rel string) ([]byte, error) {
+	if err := CheckPath(root, rel); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return nil, fmt.Errorf("version file %s: %w", rel, err)
+	}
+	return data, nil
 }
