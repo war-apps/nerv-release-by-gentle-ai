@@ -11,7 +11,7 @@ import (
 )
 
 // Rule 1: commit-analyzer's default rules with the conventionalcommits
-// preset and dim's note keywords.
+// preset and the built-in note keywords.
 func TestComputeBumpRules(t *testing.T) {
 	cases := []struct {
 		name    string

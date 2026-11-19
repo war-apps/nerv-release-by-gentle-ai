@@ -52,18 +52,18 @@ func TestInfisicalSource_ReadsTheRootAndTheAppFolder(t *testing.T) {
 		path := c.Args[slices.Index(c.Args, "--path")+1]
 		switch path {
 		case "/":
-			return proc.Result{Stdout: []byte(`[{"key":"DOCKER_SSH_HOST","value":"10.2.0.126"},{"key":"DOCKER_SSH_PASS","value":"pw"},{"key":"DOCKER_IMAGE","value":"ignored at the root"}]`)}, nil
-		case "/comprobantes-api":
-			return proc.Result{Stdout: []byte(`[{"key":"DOCKER_CONTAINER_NAME","value":"comprobantes-api"},{"key":"DOCKER_IMAGE_VERSION","value":"alpha"},{"key":"DOCKER_SSH_HOST","value":"ignored in the app"}]`)}, nil
+			return proc.Result{Stdout: []byte(`[{"key":"DOCKER_SSH_HOST","value":"10.0.0.126"},{"key":"DOCKER_SSH_PASS","value":"pw"},{"key":"DOCKER_IMAGE","value":"ignored at the root"}]`)}, nil
+		case "/acme-api":
+			return proc.Result{Stdout: []byte(`[{"key":"DOCKER_CONTAINER_NAME","value":"acme-api"},{"key":"DOCKER_IMAGE_VERSION","value":"alpha"},{"key":"DOCKER_SSH_HOST","value":"ignored in the app"}]`)}, nil
 		}
 		return proc.Result{}, errors.New("unexpected path")
 	}}
-	src := InfisicalSource{Proc: f, ProjectID: "p-1", AppPath: "/comprobantes-api", Domain: "https://infisical.example", Env: []string{"HOME=/h"}}
+	src := InfisicalSource{Proc: f, ProjectID: "p-1", AppPath: "/acme-api", Domain: "https://infisical.example", Env: []string{"HOME=/h"}}
 	d, err := src.Read(context.Background(), "development")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d["DOCKER_SSH_HOST"] != "10.2.0.126" || d["DOCKER_SSH_PASS"] != "pw" || d["DOCKER_CONTAINER_NAME"] != "comprobantes-api" || d["DOCKER_IMAGE_VERSION"] != "alpha" || d["DOCKER_IMAGE"] != "" {
+	if d["DOCKER_SSH_HOST"] != "10.0.0.126" || d["DOCKER_SSH_PASS"] != "pw" || d["DOCKER_CONTAINER_NAME"] != "acme-api" || d["DOCKER_IMAGE_VERSION"] != "alpha" || d["DOCKER_IMAGE"] != "" {
 		t.Errorf("data %v", d)
 	}
 	want := []string{"export", "--silent", "--env", "development", "--path", "/", "--projectId", "p-1", "--format", "json",

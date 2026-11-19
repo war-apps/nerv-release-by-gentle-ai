@@ -39,7 +39,7 @@ tasks:
   providers:                        # one block per provider, only the enabled one is required
     teamwork:
       task_ref_prefix: tw           # {prefix} in branch_pattern / commit_ref_pattern
-      assignee_id: 686035           # user scope
+      assignee_id: 123456           # user scope
       default_project_id: 1271726
       default_tasklist_id: 3951970
       stages: { inDev: DESARROLLO, testing: TESTING, implemented: IMPLEMENTA, blocked: BLOQUEA, canceled: CANCEL, pending: PENDIENTE, analysis: ANALISIS }
@@ -92,7 +92,7 @@ tasks:
   providers:                        # one block per provider, only the enabled one is required
     teamwork:
       task_ref_prefix: tw           # {prefix} in branch_pattern / commit_ref_pattern
-      assignee_id: 686035           # user scope
+      assignee_id: 123456           # user scope
       default_project_id: 1271726
       default_tasklist_id: 3951970
       stages: { inDev: DESARROLLO, testing: TESTING, implemented: IMPLEMENTA, blocked: BLOQUEA, canceled: CANCEL, pending: PENDIENTE, analysis: ANALISIS }
@@ -189,7 +189,7 @@ func TestBlock_GroupB(t *testing.T) {
 	tasksBlock, tasksFound := doc.Block("tasks")
 	t.Run("get-block-tasks-includes-nested-content", func(t *testing.T) {
 		if !tasksFound ||
-			!strings.Contains(tasksBlock, "assignee_id: 686035") ||
+			!strings.Contains(tasksBlock, "assignee_id: 123456") ||
 			!strings.Contains(tasksBlock, "erp-proveedores") ||
 			!strings.Contains(tasksBlock, "known_projects:") ||
 			!strings.Contains(tasksBlock, "sources_howto: |") {
@@ -223,7 +223,7 @@ func TestScalar_GroupC(t *testing.T) {
 		}
 	})
 	t.Run("scalar-nested-assignee-id", func(t *testing.T) {
-		if v, ok := doc.Scalar("tasks.providers.teamwork.assignee_id"); !ok || v != "686035" {
+		if v, ok := doc.Scalar("tasks.providers.teamwork.assignee_id"); !ok || v != "123456" {
 			t.Errorf("got %q, %v", v, ok)
 		}
 	})

@@ -193,14 +193,14 @@ func TestSSH_RefusesUnsafeDestinations(t *testing.T) {
 			t.Errorf("NewTarget with %s %q: err = %v", tt.field, tt.value, err)
 		}
 	}
-	for _, host := range []string{"10.2.0.126", "docker-01.example.com", "fe80::1", "localhost"} {
+	for _, host := range []string{"10.0.0.126", "docker-01.example.com", "fe80::1", "localhost"} {
 		tg := target("staging")
 		tg.Host = host
 		if _, err := passwordSSH(&fakeProc{}).Run(context.Background(), tg, "uptime", nil); err != nil {
 			t.Errorf("host %q refused: %v", host, err)
 		}
 	}
-	for _, user := range []string{`wal1rod@DIRMAD.COM.AR`, `DOMAIN\user`, "deploy"} {
+	for _, user := range []string{`jdoe@CORP.EXAMPLE`, `DOMAIN\user`, "deploy"} {
 		tg := target("staging")
 		tg.User = user
 		f := &fakeProc{}

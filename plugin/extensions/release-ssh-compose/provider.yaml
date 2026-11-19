@@ -1,5 +1,5 @@
 # SSH and docker compose target of the release extension (contract:
-# docs/extensions.md and the deploy target slot): dim's /update-deploy for
+# docs/extensions.md and the deploy target slot): an /update-deploy for
 # one environment. A native provider: preflight, deploy and verify run
 # nerv-release's own hidden `nerv-release provider release-ssh-compose
 # <operation>`. preflight checks the config before anything is written and

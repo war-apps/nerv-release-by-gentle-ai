@@ -7,7 +7,7 @@ import (
 
 // The order node 24 gives these strings with localeCompare (ICU root), the
 // comparison conventional-changelog-writer sorts commits with; the
-// strings are scope+subject keys from dim's CHANGELOG files and probes of
+// strings are scope+subject keys from real CHANGELOG files and probes of
 // punctuation, digits, case, accents and ß.
 func TestLocaleCompareMatchesNode(t *testing.T) {
 	want := []string{

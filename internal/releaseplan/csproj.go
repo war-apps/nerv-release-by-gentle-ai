@@ -15,7 +15,7 @@ var versionRe = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+-]*$`)
 
 // WriteCsproj sets <Version> and <PackageReleaseNotes> in the MSBuild
 // project file at path, the version_files write (modelled on
-// dim.comprobantes.api's scripts/bump-csproj.sh, but as a text edit instead
+// a .NET project's scripts/bump-csproj.sh, but as a text edit instead
 // of sed). nerv-release build writes it in the release clone before the pipeline, so
 // the packages carry the notes, and stores the file in the artifact for
 // the release commit.

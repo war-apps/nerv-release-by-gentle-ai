@@ -352,7 +352,7 @@ func TestIntegration_ReleaseUsesTheLocalUncommittedSection(t *testing.T) {
 	}
 }
 
-// The release: section's default branches are dim's: develop gets
+// The release: section's default branches are the built-in ones: develop gets
 // X.Y.Z-alpha.1 on the alpha channel.
 func TestIntegration_ReleaseWithTheBuiltInConfiguration(t *testing.T) {
 	requireReleaseToolchain(t)
