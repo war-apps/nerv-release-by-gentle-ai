@@ -16,8 +16,9 @@ import (
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaserun"
 )
 
-// artifacts is the artifacts directory the tests plan with.
-var artifacts = filepath.Join(string(filepath.Separator)+"tmp", "nerv-release")
+// artifacts is the artifacts directory the tests plan with: absolute on
+// every OS (on Windows a rooted path needs a volume to be absolute).
+var artifacts = filepath.Join(filepath.VolumeName(os.TempDir())+string(filepath.Separator)+"tmp", "nerv-release")
 
 func ctxFor(version, channel string) Context {
 	return Context{Version: version, Channel: channel, Tag: "v" + version, GitHead: "abc123", ArtifactsDir: artifacts}
