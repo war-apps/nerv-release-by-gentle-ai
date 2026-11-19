@@ -500,9 +500,11 @@ func bashVariables(op string, p bashPayload, commit string) map[string]string {
 		"NERV_DEPLOY_OPERATION": op, "NERV_DEPLOY_TARGET": p.Target, "NERV_DEPLOY_PROJECT": a.Project,
 		"NERV_DEPLOY_VERSION": a.Version, "NERV_DEPLOY_TAG": a.Tag, "NERV_DEPLOY_CHANNEL": a.Channel,
 		"NERV_DEPLOY_PRERELEASE": prerelease, "NERV_DEPLOY_BRANCH": a.Branch, "NERV_DEPLOY_BASE_COMMIT": a.BaseCommit,
-		"NERV_DEPLOY_COMMIT": commit, "NERV_DEPLOY_BUILD_PROVIDER": a.BuildProvider, "NERV_DEPLOY_ARTIFACT_DIR": p.ArtifactDir,
-		"NERV_DEPLOY_NOTES_FILE":     filepath.Join(p.ArtifactDir, artifact.NotesFile),
-		"NERV_DEPLOY_CHANGELOG_FILE": filepath.Join(p.ArtifactDir, artifact.ChangelogFile),
+		// Paths reach the bash script with forward slashes: Git Bash on
+		// Windows reads them, while an unquoted backslash is an escape.
+		"NERV_DEPLOY_COMMIT": commit, "NERV_DEPLOY_BUILD_PROVIDER": a.BuildProvider, "NERV_DEPLOY_ARTIFACT_DIR": filepath.ToSlash(p.ArtifactDir),
+		"NERV_DEPLOY_NOTES_FILE":     filepath.ToSlash(filepath.Join(p.ArtifactDir, artifact.NotesFile)),
+		"NERV_DEPLOY_CHANGELOG_FILE": filepath.ToSlash(filepath.Join(p.ArtifactDir, artifact.ChangelogFile)),
 		"NERV_DEPLOY_IMAGES":         strings.Join(a.Images, " "),
 	}
 }

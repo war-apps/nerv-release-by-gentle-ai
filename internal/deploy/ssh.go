@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -57,8 +58,11 @@ func (s SSH) Run(ctx context.Context, t Target, remote string, stream io.Writer)
 		return "", fmt.Errorf("ssh.port %d is not a port", s.Port)
 	}
 	// Every value is an option argument (-o key="value", -p, -l, -i) and
-	// the host comes after --, so none can be read as an option.
-	args := []string{"-o", "StrictHostKeyChecking=yes", "-o", `UserKnownHostsFile="` + s.KnownHosts + `"`,
+	// the host comes after --, so none can be read as an option. An -o
+	// value is parsed like ssh_config, where a backslash may escape: the
+	// known_hosts path is given with forward slashes, which every ssh on
+	// Windows accepts.
+	args := []string{"-o", "StrictHostKeyChecking=yes", "-o", `UserKnownHostsFile="` + filepath.ToSlash(s.KnownHosts) + `"`,
 		"-o", "ConnectTimeout=" + strconv.Itoa(int(math.Ceil(s.ConnectTimeout.Seconds()))), "-o", "LogLevel=ERROR",
 		"-o", "ServerAliveInterval=" + strconv.Itoa(serverAliveInterval), "-o", "ServerAliveCountMax=" + strconv.Itoa(serverAliveCountMax),
 		"-p", strconv.Itoa(s.Port), "-l", t.User}

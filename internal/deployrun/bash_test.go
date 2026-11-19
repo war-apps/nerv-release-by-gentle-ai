@@ -42,7 +42,7 @@ func TestRun_DeploysWithTheBashTarget(t *testing.T) {
 	head := git(t, e.origin, "rev-parse", "refs/heads/develop")
 	env, _ := os.ReadFile(filepath.Join(e.fake, "script.env"))
 	for _, v := range []string{"NERV_DEPLOY_TARGET=docs", "NERV_DEPLOY_VERSION=1.0.0-alpha.1", "NERV_DEPLOY_TAG=" + tag, "NERV_DEPLOY_CHANNEL=alpha",
-		"NERV_DEPLOY_PRERELEASE=true", "NERV_DEPLOY_BUILD_PROVIDER=docker-compose", "NERV_DEPLOY_COMMIT=" + head, "NERV_DEPLOY_ARTIFACT_DIR=" + e.dir,
+		"NERV_DEPLOY_PRERELEASE=true", "NERV_DEPLOY_BUILD_PROVIDER=docker-compose", "NERV_DEPLOY_COMMIT=" + head, "NERV_DEPLOY_ARTIFACT_DIR=" + filepath.ToSlash(e.dir),
 		"NERV_DEPLOY_IMAGES=reg.example/app:1.0.0-alpha.1"} {
 		if !strings.Contains(string(env), v+"\n") {
 			t.Errorf("script environment lacks %s:\n%s", v, env)
