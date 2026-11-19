@@ -100,8 +100,10 @@ func newReleaseRepos(t *testing.T) (origin, work gitDir) {
 // append one line each to marker, with the NERV_RELEASE_* values they saw;
 // its package stage writes <name>.txt to the outputs.
 func markerProject(name, path, tagFormat, marker string) string {
+	// The marker is quoted with forward slashes: bash (Git Bash on
+	// Windows) reads an unquoted backslash as an escape.
 	line := func(what string) string {
-		return `{ run: 'echo "` + what + ` $NERV_RELEASE_PROJECT $NERV_RELEASE_VERSION $NERV_RELEASE_TAG dry=$NERV_RELEASE_DRY_RUN" >> ` + marker + `' }`
+		return `{ run: 'echo "` + what + ` $NERV_RELEASE_PROJECT $NERV_RELEASE_VERSION $NERV_RELEASE_TAG dry=$NERV_RELEASE_DRY_RUN" >> "` + filepath.ToSlash(marker) + `"' }`
 	}
 	p := "    - name: " + name + "\n      path: " + path + "\n      build: bash\n"
 	if tagFormat != "" {
