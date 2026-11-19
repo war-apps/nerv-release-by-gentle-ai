@@ -236,7 +236,7 @@ func TestRun_StreamsPrefixedLinesToOneWriter(t *testing.T) {
 	if err := r.Run(context.Background(), Step{Name: "after_build", Command: releaseconfig.Command{Run: "x"}}, Vars{Project: "web-app"}); err != nil {
 		t.Fatal(err)
 	}
-	want := "[web-app:after_build] one\n[web-app:after_build] two\r\n[web-app:after_build] three\n"
+	want := "[web-app:after_build] one\n[web-app:after_build] two\n[web-app:after_build] three\n"
 	if out.String() != want {
 		t.Errorf("output:\n%q\nwant\n%q", out.String(), want)
 	}
@@ -248,6 +248,20 @@ func TestPrefixWriter_LongLineWithoutNewline(t *testing.T) {
 	_, _ = w.Write([]byte("0123456789abc\nz"))
 	w.Flush()
 	want := "[p:s] 01234567\n[p:s] 89abc\n[p:s] z\n"
+	if out.String() != want {
+		t.Errorf("output %q, want %q", out.String(), want)
+	}
+}
+
+// Windows tools (pwsh) end their lines with CRLF: each line is written with
+// a plain newline, also when the CR and the LF arrive in separate writes.
+func TestPrefixWriter_CRLFLinesEndWithANewline(t *testing.T) {
+	var out bytes.Buffer
+	w := newPrefixWriter(&out, "[p:s] ", 64)
+	_, _ = w.Write([]byte("one\r\ntwo\r"))
+	_, _ = w.Write([]byte("\nthree\r\n"))
+	w.Flush()
+	want := "[p:s] one\n[p:s] two\n[p:s] three\n"
 	if out.String() != want {
 		t.Errorf("output %q, want %q", out.String(), want)
 	}

@@ -65,11 +65,16 @@ func (w *prefixWriter) Flush() {
 	}
 }
 
-// emit writes the held line with its prefix and a newline if it has none.
+// emit writes the held line with its prefix and a newline if it has none;
+// a CRLF ending (Windows tools such as pwsh) is written as a plain newline.
 func (w *prefixWriter) emit() {
-	buf := make([]byte, 0, len(w.prefix)+len(w.line)+1)
-	buf = append(append(buf, w.prefix...), w.line...)
-	if !bytes.HasSuffix(w.line, []byte("\n")) {
+	line := w.line
+	if bytes.HasSuffix(line, []byte("\r\n")) {
+		line = append(line[:len(line)-2], '\n')
+	}
+	buf := make([]byte, 0, len(w.prefix)+len(line)+1)
+	buf = append(append(buf, w.prefix...), line...)
+	if !bytes.HasSuffix(line, []byte("\n")) {
 		buf = append(buf, '\n')
 	}
 	w.line = w.line[:0]
