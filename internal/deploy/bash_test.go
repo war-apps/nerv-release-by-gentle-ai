@@ -330,7 +330,8 @@ func TestRunBashOp_DeployIgnoresExportIgnoreAttributes(t *testing.T) {
 test -x deploy/tool.sh && echo yes > "$OUT/exec"
 cat lib/link.txt > "$OUT/link"
 `,
-		"deploy/tool.sh": "true\n",
+		// Git Bash on Windows deems a file executable by its #! line.
+		"deploy/tool.sh": "#!/bin/sh\ntrue\n",
 		"lib/data.txt":   "released\n",
 	})
 	if err := os.Chmod(filepath.Join(r.dir, "deploy", "tool.sh"), 0o755); err != nil {
@@ -340,6 +341,9 @@ cat lib/link.txt > "$OUT/link"
 		t.Fatal(err)
 	}
 	r.git("-C", r.dir, "add", "-A")
+	// Windows checkouts ignore the file mode (core.filemode false): set the
+	// executable mode in the index, as a Windows user would.
+	r.git("-C", r.dir, "update-index", "--chmod=+x", "deploy/tool.sh")
 	r.git("-C", r.dir, "commit", "-q", "-m", "modes")
 	r.git("-C", r.dir, "tag", "-f", "v1.2.0")
 	code, resp, stderr := r.run("deploy", r.dir, map[string]any{"script": "deploy/run.sh"})
