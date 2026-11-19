@@ -98,9 +98,11 @@ type Project struct {
 	// bash the project's own commands (the package stage, usually) must
 	// build them.
 	Images []BuildImage `yaml:"images"`
-	// VersionFiles are MSBuild project files that receive the version in
-	// the release clone before the pipeline.
-	VersionFiles []string `yaml:"version_files"`
+	// VersionFiles receive the version in the release clone before the
+	// pipeline and are captured into the artifact's release files: each a
+	// version file (any format internal/versionfile writes, MSBuild
+	// project files included) or a command and the files it changes.
+	VersionFiles []VersionFile `yaml:"version_files"`
 	// Coverage checks coverage floors over Cobertura reports after the
 	// coverage stage.
 	Coverage *Coverage `yaml:"coverage"`

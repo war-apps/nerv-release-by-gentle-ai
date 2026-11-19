@@ -2,17 +2,12 @@ package releaseconfig
 
 import (
 	"fmt"
-	"path"
 	"regexp"
 	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
-
-// VersionFileExtensions are the MSBuild project files version_files may
-// name: nerv release writes <Version> (and <PackageReleaseNotes>) in them.
-var VersionFileExtensions = []string{".csproj", ".fsproj", ".vbproj", ".props", ".targets"}
 
 // DockerTagKinds are the tag kinds an images mapping may list, as
 // 4.2.0's docker preset tagged its images: version always; channel only
@@ -111,13 +106,7 @@ func (v *validator) checkBuild(at string, p Project) {
 		v.checkImage(fmt.Sprintf("%s.images[%d]", at, j), img)
 	}
 	for j, f := range p.VersionFiles {
-		fat := fmt.Sprintf("%s.version_files[%d]", at, j)
-		if problem := v.pathProblem(fat, f); problem {
-			continue
-		}
-		if !slices.Contains(VersionFileExtensions, strings.ToLower(path.Ext(normalize(f)))) {
-			v.addf("%s: %q is not an MSBuild project file (%s)", fat, f, list(VersionFileExtensions))
-		}
+		v.checkVersionFile(fmt.Sprintf("%s.version_files[%d]", at, j), f)
 	}
 	if c := p.Coverage; c != nil {
 		cat := at + ".coverage"

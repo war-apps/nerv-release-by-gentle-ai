@@ -152,7 +152,7 @@ func TestLoad_MergeKeys(t *testing.T) {
       path: cli
 `)
 	worker, cli := rel.Projects[1], rel.Projects[2]
-	if worker.Build != "bash" || len(worker.VersionFiles) != 1 || worker.VersionFiles[0] != "api/Api.csproj" || worker.Path != "worker" {
+	if worker.Build != "bash" || len(worker.VersionFiles) != 1 || worker.VersionFiles[0].Path != "api/Api.csproj" || worker.Path != "worker" {
 		t.Errorf("worker = %+v", worker)
 	}
 	if got := worker.Stages["test"]; got.Run != "scripts/test.sh" || got.Shell != "pwsh" {

@@ -32,7 +32,7 @@ func TestLoad_BashBuild(t *testing.T) {
 	if p.Build != "bash" || rel.BuildProvider(p) != "bash" || !p.Submodules || p.Providers["bash"]["shared_host"] != true {
 		t.Fatalf("build = %q, providers %v, submodules %v", p.Build, p.Providers, p.Submodules)
 	}
-	if !reflect.DeepEqual(p.VersionFiles, []string{"src/Api/Api.csproj"}) {
+	if !reflect.DeepEqual(p.VersionFiles, []releaseconfig.VersionFile{{Path: "src/Api/Api.csproj"}}) {
 		t.Errorf("version_files = %v, want the normalised path", p.VersionFiles)
 	}
 	if p.Coverage == nil || p.Coverage.Dir != "tests/coverage" || p.Coverage.Floors() != (releaseconfig.CoverageThreshold{Line: 80, Branch: 70.5}) {
@@ -208,7 +208,6 @@ func TestLoad_BuildErrors(t *testing.T) {
 		{"empty image", "      images: [\"\"]\n", "release.projects[0].images[0]: required"},
 		{"image placeholder", "      images: [\"x:${build}\"]\n", "release.projects[0].images[0]: unknown placeholder ${build} (want ${version}, ${channel} or ${tag})"},
 		{"image with a space", "      images: [\"x y\"]\n", `release.projects[0].images[0]: "x y" is not an image reference`},
-		{"version file kind", "      version_files: [package.json]\n", `release.projects[0].version_files[0]: "package.json" is not an MSBuild project file (.csproj, .fsproj, .vbproj, .props or .targets)`},
 		{"escaping version file", "      version_files: [../x.csproj]\n", `release.projects[0].version_files[0]: "../x.csproj" escapes the repository root`},
 		{"coverage without floors", "      coverage: { dir: cov }\n", "release.projects[0].coverage: set at least one floor (line, branch or method)"},
 		{"coverage out of range", "      coverage: { line: 120 }\n", "release.projects[0].coverage.line: 120 must be between 0 and 100"},

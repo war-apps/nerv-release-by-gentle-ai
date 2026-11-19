@@ -51,7 +51,11 @@ func (r *Release) finalizePaths() {
 			p.Changelog = normalize(p.Changelog)
 		}
 		for j := range p.VersionFiles {
-			p.VersionFiles[j] = normalize(p.VersionFiles[j])
+			f := &p.VersionFiles[j]
+			f.Path = normalize(f.Path)
+			for k := range f.Files {
+				f.Files[k] = normalize(f.Files[k])
+			}
 		}
 		if p.Coverage != nil {
 			p.Coverage.Dir = normalize(p.Coverage.Dir)

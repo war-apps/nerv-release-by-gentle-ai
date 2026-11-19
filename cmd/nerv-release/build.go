@@ -22,6 +22,7 @@ import (
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseconfig"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseplan"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaserun"
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/versionfile"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/versioning"
 )
 
@@ -537,7 +538,8 @@ func checkPathsOnOrigin(rel *releaseconfig.Release, clone, branch string) error 
 			check(p.Name, "shared_paths", sp)
 		}
 		for _, f := range p.VersionFiles {
-			check(p.Name, "version_files", f)
+			// A command entry's files may not exist before it runs.
+			check(p.Name, "version_files", f.Path)
 		}
 		for _, stage := range slices.Sorted(maps.Keys(p.Stages)) {
 			check(p.Name, "stages."+stage+".workdir", p.Stages[stage].Workdir)
@@ -855,7 +857,7 @@ func (s *releaseRun) releaseOne(ctx context.Context, it releaseItem) error {
 		}
 		return err
 	}
-	files, err := s.writeReleaseFiles(it)
+	files, err := s.writeReleaseFiles(ctx, it, vars)
 	if err != nil {
 		return failed(err, false)
 	}
@@ -890,40 +892,38 @@ func (s *releaseRun) releaseOne(ctx context.Context, it releaseItem) error {
 }
 
 // writeReleaseFiles writes, in the release clone only, the version into
-// each of version_files (with the release link as the package notes
-// when origin has a public address) and the CHANGELOG section into the
-// project's changelog, and returns their new contents for the artifact.
-func (s *releaseRun) writeReleaseFiles(it releaseItem) ([]artifact.ReleaseFileSource, error) {
-	v, p := it.version, it.project
-	var out []artifact.ReleaseFileSource
-	read := func(rel string) error {
-		data, err := os.ReadFile(filepath.Join(s.ws.Dir(), filepath.FromSlash(rel)))
+// each of version_files in order (an MSBuild project file with the release
+// link as the package notes when origin has a public address; a command
+// entry runs its command) and the CHANGELOG section into the project's
+// changelog, and returns their new contents for the artifact: each file
+// once, with its final content.
+func (s *releaseRun) writeReleaseFiles(ctx context.Context, it releaseItem, vars releaserun.Vars) ([]artifact.ReleaseFileSource, error) {
+	v, p, dir := it.version, it.project, s.ws.Dir()
+	var captured []string
+	for i, f := range p.VersionFiles {
+		at := fmt.Sprintf("project %s, version_files[%d]", p.Name, i)
+		files, err := s.writeVersionFile(ctx, it, vars, i, f)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("%s: %w", at, err)
 		}
-		out = append(out, artifact.ReleaseFileSource{Path: rel, Content: data})
-		return nil
-	}
-	files := p.VersionFiles
-	link := releaseclone.ReleaseURL(s.ws.PublicURL(), v.Tag)
-	for _, f := range files {
-		path := filepath.Join(s.ws.Dir(), filepath.FromSlash(f))
-		var err error
-		if link == "" {
-			fmt.Fprintf(s.stderr, "nerv-release build: warning: origin has no public address to link the release to; %s keeps its <PackageReleaseNotes>\n", f)
-			err = releaseplan.WriteCsprojVersion(path, v.Version)
-		} else {
-			err = releaseplan.WriteCsproj(path, v.Version, link)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if err := read(f); err != nil {
-			return nil, err
+		for _, rel := range files {
+			// Each file must be there (a command may not have written it)
+			// and not be reached through a symlink.
+			if _, err := versionfile.ReadFile(dir, rel); err != nil {
+				return nil, fmt.Errorf("%s: %w", at, err)
+			}
+			if !slices.Contains(captured, rel) {
+				captured = append(captured, rel)
+			}
 		}
 	}
 	if v.Changelog != "" && strings.TrimSpace(v.ChangelogSection) != "" {
-		path := filepath.Join(s.ws.Dir(), filepath.FromSlash(v.Changelog))
+		// Like a version file, a committed symlink must not make the clone
+		// write outside it.
+		if err := versionfile.CheckPath(dir, v.Changelog); err != nil {
+			return nil, fmt.Errorf("project %s: changelog: %w", p.Name, err)
+		}
+		path := filepath.Join(dir, filepath.FromSlash(v.Changelog))
 		old, err := os.ReadFile(path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
@@ -934,11 +934,69 @@ func (s *releaseRun) writeReleaseFiles(it releaseItem) ([]artifact.ReleaseFileSo
 		if err := os.WriteFile(path, []byte(prependChangelog(string(old), v.ChangelogSection)), 0o644); err != nil {
 			return nil, err
 		}
-		if err := read(v.Changelog); err != nil {
-			return nil, err
+	}
+	var out []artifact.ReleaseFileSource
+	for _, rel := range captured {
+		data, err := versionfile.ReadFile(dir, rel)
+		if err != nil {
+			return nil, fmt.Errorf("project %s: %w", p.Name, err)
 		}
+		out = append(out, artifact.ReleaseFileSource{Path: rel, Content: data})
+	}
+	if v.Changelog != "" && strings.TrimSpace(v.ChangelogSection) != "" && !slices.Contains(captured, v.Changelog) {
+		data, err := versionfile.ReadFile(dir, v.Changelog)
+		if err != nil {
+			return nil, fmt.Errorf("project %s: changelog: %w", p.Name, err)
+		}
+		out = append(out, artifact.ReleaseFileSource{Path: v.Changelog, Content: data})
 	}
 	return out, nil
+}
+
+// writeVersionFile writes the version for version_files entry i in the
+// release clone and returns the files to capture: a command entry runs its
+// command ({version} rendered in the entry's style) through the step runner
+// the stages use; an MSBuild project file gets <Version> and the release
+// link; any other file is edited by versionfile.
+func (s *releaseRun) writeVersionFile(ctx context.Context, it releaseItem, vars releaserun.Vars, i int, f releaseconfig.VersionFile) ([]string, error) {
+	v, dir := it.version, s.ws.Dir()
+	if f.Command != "" {
+		version, err := versionfile.Render(v.Version, f.Style)
+		if err != nil {
+			return nil, err
+		}
+		step := releaserun.Step{
+			Name:    fmt.Sprintf("version_files[%d]", i),
+			Command: releaseconfig.Command{Run: strings.ReplaceAll(f.Command, "{version}", version), Shell: releaseconfig.DefaultShell},
+		}
+		if err := s.exec.Steps.Run(ctx, step, vars); err != nil {
+			return nil, err
+		}
+		return f.Files, nil
+	}
+	spec, err := versionfile.Resolve(f.Spec())
+	if err != nil {
+		return nil, err
+	}
+	if spec.Format != versionfile.FormatMSBuild {
+		return []string{spec.Path}, versionfile.Write(dir, spec, v.Version)
+	}
+	// releaseplan.WriteCsproj follows symlinks: refuse one first.
+	if err := versionfile.CheckPath(dir, spec.Path); err != nil {
+		return nil, err
+	}
+	version, err := versionfile.Render(v.Version, spec.Style)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, filepath.FromSlash(spec.Path))
+	if link := releaseclone.ReleaseURL(s.ws.PublicURL(), v.Tag); link != "" {
+		err = releaseplan.WriteCsproj(path, version, link)
+	} else {
+		fmt.Fprintf(s.stderr, "nerv-release build: warning: origin has no public address to link the release to; %s keeps its <PackageReleaseNotes>\n", spec.Path)
+		err = releaseplan.WriteCsprojVersion(path, version)
+	}
+	return []string{spec.Path}, err
 }
 
 // prependChangelog puts section at the top of a CHANGELOG, under its
