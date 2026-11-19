@@ -100,3 +100,82 @@ func TestImportSection_CreatesTheSectionWhenAbsent(t *testing.T) {
 		t.Errorf("result:\n%s", out)
 	}
 }
+
+// R-S7: the imported version files go to the one project's version_files:
+// appended after its entries (string or mapping), each once, comments and
+// the rest of the file kept.
+func TestImportVersionFiles_OneProjectAppendsOnceAndKeepsTheRest(t *testing.T) {
+	data := []byte("# team settings\nenabled: true\nrelease:\n  projects:\n    - name: api\n      path: .\n      build: bash\n      version_files:\n        - src/Api.csproj # the assembly version\n        - {path: package.json, key: version}\ndeploy:\n  host: github\n")
+	out, notes, warnings, err := releaseconfig.ImportVersionFiles(data, []string{"package.json", "package-lock.json", "src/Api.csproj"})
+	if err != nil {
+		t.Fatalf("ImportVersionFiles: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "package-lock.json") || strings.Contains(notes[0], "src/Api.csproj") || !strings.Contains(notes[0], "release.projects[0].version_files") {
+		t.Errorf("notes = %v, want one naming only package-lock.json and where", notes)
+	}
+	for _, want := range []string{"# team settings\nenabled: true\n", "deploy:\n  host: github\n", "# the assembly version"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("result lacks %q:\n%s", want, out)
+		}
+	}
+	rel, err := releaseconfig.Load(writeConfig(t, out))
+	if err != nil {
+		t.Fatalf("the result does not load: %v\n%s", err, out)
+	}
+	var paths []string
+	for _, f := range rel.Projects[0].VersionFiles {
+		paths = append(paths, f.Path)
+	}
+	if strings.Join(paths, ",") != "src/Api.csproj,package.json,package-lock.json" {
+		t.Errorf("version_files = %v", paths)
+	}
+}
+
+// R-S7: a project without version_files gets the key.
+func TestImportVersionFiles_CreatesTheKey(t *testing.T) {
+	data := []byte("release:\n  projects:\n    - name: api\n      path: .\n")
+	out, _, _, err := releaseconfig.ImportVersionFiles(data, []string{"package.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := releaseconfig.Load(writeConfig(t, out))
+	if err != nil {
+		t.Fatalf("the result does not load: %v\n%s", err, out)
+	}
+	if fs := rel.Projects[0].VersionFiles; len(fs) != 1 || fs[0].Path != "package.json" {
+		t.Errorf("version_files = %+v\n%s", fs, out)
+	}
+}
+
+// R-S7: with no project or several, no project is chosen or invented: the
+// file is unchanged and one warning lists the files.
+func TestImportVersionFiles_NoOrSeveralProjectsWarnAndChangeNothing(t *testing.T) {
+	for _, data := range []string{
+		"release:\n  providers: {}\n",
+		"",
+		"release:\n  projects:\n    - name: api\n      path: api\n    - name: web\n      path: web\n",
+	} {
+		out, notes, warnings, err := releaseconfig.ImportVersionFiles([]byte(data), []string{"package.json", "pom.xml"})
+		if err != nil {
+			t.Fatalf("%q: %v", data, err)
+		}
+		if out != data || len(notes) != 0 {
+			t.Errorf("%q: changed to %q (notes %v)", data, out, notes)
+		}
+		if len(warnings) != 1 || !strings.Contains(warnings[0], "package.json, pom.xml") || !strings.Contains(warnings[0], "version_files") {
+			t.Errorf("%q: warnings = %v", data, warnings)
+		}
+	}
+}
+
+// Nothing to import changes nothing and says nothing.
+func TestImportVersionFiles_NoFiles(t *testing.T) {
+	data := "release:\n  projects:\n    - name: api\n      path: .\n"
+	out, notes, warnings, err := releaseconfig.ImportVersionFiles([]byte(data), nil)
+	if err != nil || out != data || len(notes)+len(warnings) != 0 {
+		t.Errorf("out %q notes %v warnings %v err %v", out, notes, warnings, err)
+	}
+}

@@ -47,9 +47,16 @@ are kept. A 4.2.0 release: section is refused. An engine key
 release.providers.<engine> already sets to another value is never replaced
 silently: the import refuses, listing each one with its current and
 imported values, unless --force is given, which replaces them and prints
-each replaced value. Each part that cannot be translated is printed as a
-warning (the npm and exec plugins, presetConfig.types, extends, maintenance
-branches; git and github belong to the deploy: section). A JavaScript
+each replaced value. The files semantic-release writes the version into
+become version files: @semantic-release/npm's package.json (under its
+pkgRoot, with package-lock.json when the repository has one) and each
+@semantic-release/git asset that is a plain path in a known format; they
+are appended to the version_files of the only project of
+release.projects, and with no project or several a warning lists them
+instead. Each part that cannot be translated is printed as a warning (npm
+publishing, the exec plugin, git assets that are globs or of no known
+format, presetConfig.types, extends, maintenance branches; the git
+plugin's release commit and github belong to the deploy: section). A JavaScript
 configuration is never imported: it is reported, to migrate by hand. After
 the import the semantic-release configuration is no longer used.
 
@@ -145,7 +152,13 @@ func releaseSetupImport(ctx context.Context, cwd string, dryRun, force bool, std
 	if err != nil {
 		return err
 	}
-	for _, w := range imported.Warnings {
+	text, added, unplaced, err := releaseconfig.ImportVersionFiles([]byte(text), imported.VersionFiles)
+	if err != nil {
+		return err
+	}
+	warnings := append(imported.Warnings, unplaced...)
+	notes = append(notes, added...)
+	for _, w := range warnings {
 		fmt.Fprintf(stderr, "nerv-release setup: warning: %s\n", w)
 	}
 	for _, n := range notes {
@@ -160,6 +173,6 @@ func releaseSetupImport(ctx context.Context, cwd string, dryRun, force bool, std
 	if err := atomicfile.Write(path, []byte(text), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "nerv-release setup: imported %s into the release: section of %s (%d warning(s))\n", imported.Source, path, len(imported.Warnings))
+	fmt.Fprintf(stdout, "nerv-release setup: imported %s into the release: section of %s (%d warning(s))\n", imported.Source, path, len(warnings))
 	return nil
 }

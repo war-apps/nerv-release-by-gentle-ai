@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/versionfile"
 )
 
 // ImportResult is a semantic-release configuration translated into Config.
@@ -22,6 +25,11 @@ type ImportResult struct {
 	Source string
 	// Warnings lists every part that could not be translated.
 	Warnings []Warning
+	// VersionFiles are the files semantic-release writes the version into
+	// (@semantic-release/npm's package.json and lock file,
+	// @semantic-release/git's assets in a known format), repository-relative,
+	// for a project's version_files.
+	VersionFiles []string
 }
 
 // Warning is one untranslatable part of a semantic-release configuration.
@@ -109,7 +117,7 @@ func Import(repoDir string) (ImportResult, error) {
 				_ = json.Unmarshal(pdata, &pkg)
 			}
 		}
-		res, err := translate(raw, pkg)
+		res, err := translate(raw, pkg, repoDir)
 		if err != nil {
 			return ImportResult{}, fmt.Errorf("%s: %w", place, err)
 		}
@@ -121,10 +129,17 @@ func Import(repoDir string) (ImportResult, error) {
 
 // importer accumulates the translation and its warnings.
 type importer struct {
+	// dir is the repository, to find the lock files the npm plugin writes.
+	dir      string
 	cfg      Config
 	warnings []Warning
 	analyzer map[string]any
 	notes    map[string]any
+	// versionFiles are the files found so far; gitAssets are
+	// @semantic-release/git's assets, mapped once the changelog file is
+	// known (the plugins' order does not matter).
+	versionFiles []string
+	gitAssets    []string
 }
 
 func (im *importer) warn(where, format string, args ...any) {
@@ -146,8 +161,8 @@ var semanticReleaseDefaultPlugins = []any{
 	"@semantic-release/github",
 }
 
-func translate(raw, pkg map[string]any) (ImportResult, error) {
-	im := &importer{}
+func translate(raw, pkg map[string]any, dir string) (ImportResult, error) {
+	im := &importer{dir: dir}
 	for _, key := range sortedKeys(raw) {
 		v := raw[key]
 		switch key {
@@ -191,11 +206,12 @@ func translate(raw, pkg map[string]any) (ImportResult, error) {
 		}
 	}
 	im.parserOptions()
+	im.mapGitAssets()
 	cfg := im.cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
 		return ImportResult{}, err
 	}
-	return ImportResult{Config: cfg, Warnings: im.warnings}, nil
+	return ImportResult{Config: cfg, Warnings: im.warnings, VersionFiles: im.versionFiles}, nil
 }
 
 func sortedKeys(m map[string]any) []string {
@@ -335,11 +351,11 @@ func (im *importer) plugins(v any) {
 				}
 			}
 		case "@semantic-release/git":
-			im.warn(name, "the release commit (assets %v, message %v) is not part of the version engine: nerv deploy makes it", cfg["assets"], orDefault(cfg["message"], "the default"))
+			im.git(cfg)
 		case "@semantic-release/github":
 			im.warn(name, "the GitHub release is not part of the version engine: nerv deploy's git host provider publishes it")
 		case "@semantic-release/npm":
-			im.warn(name, "not translatable: the version engine does not write package.json or publish to npm (options %v); write the version from a build script if needed", cfg)
+			im.npm(cfg)
 		case "@semantic-release/exec":
 			var cmds []string
 			for _, k := range sortedKeys(cfg) {
@@ -357,11 +373,111 @@ func (im *importer) plugins(v any) {
 	}
 }
 
-func orDefault(v any, d string) any {
-	if v == nil {
-		return d
+const (
+	npmPlugin = "@semantic-release/npm"
+	gitPlugin = "@semantic-release/git"
+)
+
+// npm translates @semantic-release/npm: the version it writes into
+// <pkgRoot>/package.json (and the lock file next to it, when the
+// repository has one) becomes version files; publishing is not
+// translated.
+func (im *importer) npm(cfg map[string]any) {
+	root := "."
+	publish := true
+	for _, k := range sortedKeys(cfg) {
+		switch k {
+		case "pkgRoot":
+			if s, ok := cfg[k].(string); ok && s != "" {
+				root = s
+			}
+		case "npmPublish":
+			if b, ok := cfg[k].(bool); ok {
+				publish = b
+			}
+		default:
+			im.warn(npmPlugin+"."+k, "npm option not translated (%v)", cfg[k])
+		}
 	}
-	return v
+	if publish {
+		im.warn(npmPlugin, "publishing to npm is not translated: nerv-release does not publish packages; publish from a deploy hook if needed (the version it writes is imported as version files)")
+	}
+	pkg := path.Join(filepath.ToSlash(root), "package.json")
+	if err := versionfile.CheckRelative(pkg); err != nil {
+		im.warn(npmPlugin+".pkgRoot", "%v: no version file imported", err)
+		return
+	}
+	im.addVersionFile(pkg)
+	dir := path.Dir(pkg)
+	if lock := path.Join(dir, "package-lock.json"); im.exists(lock) {
+		im.addVersionFile(lock)
+	}
+	if shrinkwrap := path.Join(dir, "npm-shrinkwrap.json"); im.exists(shrinkwrap) {
+		im.warn(npmPlugin, "%s has no known version file format: add it to version_files by hand as {path: %s, format: json, keys: [version, 'packages[\"\"].version']}", shrinkwrap, shrinkwrap)
+	}
+}
+
+// git translates @semantic-release/git: its assets are kept for
+// mapGitAssets; the release commit is nerv-release deploy's.
+func (im *importer) git(cfg map[string]any) {
+	for _, k := range sortedKeys(cfg) {
+		switch k {
+		case "assets":
+			switch a := cfg[k].(type) {
+			case string:
+				im.gitAssets = append(im.gitAssets, a)
+			case []any:
+				for _, item := range a {
+					if s, ok := item.(string); ok {
+						im.gitAssets = append(im.gitAssets, s)
+					} else {
+						im.warn(gitPlugin+".assets", "asset %v is not a path, not translated", item)
+					}
+				}
+			default:
+				im.warn(gitPlugin+".assets", "%v is not a path or a list of paths, not translated", a)
+			}
+		case "message":
+			im.warn(gitPlugin+"."+k, "the release commit message %v is not translated: nerv-release deploy makes the release commit", cfg[k])
+		default:
+			im.warn(gitPlugin+"."+k, "git option not translated (%v)", cfg[k])
+		}
+	}
+}
+
+// mapGitAssets turns each @semantic-release/git asset that is a literal
+// path in a known version file format into a version file. The changelog
+// is the changelog configuration's, so it is skipped; every other asset (a
+// glob, an unknown format) is named in a warning.
+func (im *importer) mapGitAssets() {
+	changelog := strings.TrimPrefix(path.Clean(filepath.ToSlash(im.cfg.Changelog.File)), "./")
+	for _, asset := range im.gitAssets {
+		p := strings.TrimPrefix(path.Clean(filepath.ToSlash(asset)), "./")
+		switch {
+		case strings.ContainsAny(asset, "*?[]{}!"):
+			im.warn(gitPlugin+".assets", "%s is a glob: it is not imported; list the version files it matches in version_files", asset)
+		case p == changelog || strings.HasPrefix(strings.ToLower(path.Base(p)), "changelog"):
+		default:
+			if _, err := versionfile.Resolve(versionfile.Spec{Path: p}); err != nil {
+				im.warn(gitPlugin+".assets", "%s is not imported: %v (add it to version_files as a mapping, or leave it out if it holds no version)", asset, err)
+				continue
+			}
+			im.addVersionFile(p)
+		}
+	}
+}
+
+// addVersionFile adds p to the version files, once.
+func (im *importer) addVersionFile(p string) {
+	if !slices.Contains(im.versionFiles, p) {
+		im.versionFiles = append(im.versionFiles, p)
+	}
+}
+
+// exists reports whether the repository has the regular file p.
+func (im *importer) exists(p string) bool {
+	info, err := os.Lstat(filepath.Join(im.dir, filepath.FromSlash(p)))
+	return err == nil && info.Mode().IsRegular()
 }
 
 // parserOptions translates the analyzer's and the notes generator's

@@ -86,6 +86,10 @@ func TestReleaseSetup_ImportWritesTheReleaseSectionAndPrintsTheWarnings(t *testi
 	if len(branches) != 3 || branches[1].(map[string]any)["channel"] != "alpha" || len(rules) != 1 || rules[0].(map[string]any)["type"] != "docs" || rel.Projects[0].Name != "api" {
 		t.Errorf("imported section = %+v", rel)
 	}
+	// Neither npm nor git assets: no version file is imported.
+	if strings.Contains(text, "version_files") {
+		t.Errorf("version_files written without npm or git assets:\n%s", text)
+	}
 	if !strings.Contains(text, "release:\n  providers:\n    conventional-commits:\n      branches:\n") {
 		t.Errorf("the keys are not under release.providers.conventional-commits:\n%s", text)
 	}
@@ -238,5 +242,63 @@ func TestReleaseSetup_RefusesTheAlphaShipSection(t *testing.T) {
 		if got := mustReadFile(t, filepath.Join(repo, ".ai-workflow/release.yaml")); got != alphaShipYAML {
 			t.Errorf("%s: .ai-workflow/release.yaml changed:\n%s", name, got)
 		}
+	}
+}
+
+// npmReleaserc uses @semantic-release/npm, whose package.json (and the
+// repository's package-lock.json) are version files.
+const npmReleaserc = `{"branches": ["main"], "plugins": [["@semantic-release/commit-analyzer", {"preset": "conventionalcommits"}], "@semantic-release/npm"]}`
+
+// R-S7: setup --import adds the imported version files to the one
+// project's version_files, after its entries, comments kept; the result
+// loads.
+func TestReleaseSetup_ImportAddsVersionFilesToTheOnlyProject(t *testing.T) {
+	repo := setupRepo(t, map[string]string{
+		".releaserc.json":           npmReleaserc,
+		"package.json":              `{"name": "x", "version": "1.0.0"}`,
+		"package-lock.json":         `{"version": "1.0.0", "packages": {"": {"version": "1.0.0"}}}`,
+		".ai-workflow/release.yaml": "release:\n  projects:\n    - name: api\n      path: .\n      build: bash\n      version_files:\n        - VERSION # plain text\n",
+	})
+	code, stdout, stderr := runSetup(t, repo, "--import")
+	if code != 0 {
+		t.Fatalf("exit %d\nstdout %s\nstderr %s", code, stdout, stderr)
+	}
+	text := mustReadFile(t, filepath.Join(repo, ".ai-workflow/release.yaml"))
+	if !strings.Contains(text, "# plain text") {
+		t.Errorf("the comment was not kept:\n%s", text)
+	}
+	rel, err := releaseconfig.Load(repo)
+	if err != nil {
+		t.Fatalf("the written section does not load: %v\n%s", err, text)
+	}
+	var paths []string
+	for _, f := range rel.Projects[0].VersionFiles {
+		paths = append(paths, f.Path)
+	}
+	if strings.Join(paths, ",") != "VERSION,package.json,package-lock.json" {
+		t.Errorf("version_files = %v\n%s", paths, text)
+	}
+	if !strings.Contains(stderr, "added package.json, package-lock.json to release.projects[0].version_files") {
+		t.Errorf("stderr does not say what was added:\n%s", stderr)
+	}
+}
+
+// R-S7: with several projects none is chosen: the version files are
+// named in a warning, and no version_files is written.
+func TestReleaseSetup_ImportWithSeveralProjectsWarnsAboutVersionFiles(t *testing.T) {
+	repo := setupRepo(t, map[string]string{
+		".releaserc.json":           npmReleaserc,
+		"package.json":              `{"name": "x", "version": "1.0.0"}`,
+		".ai-workflow/release.yaml": "release:\n  projects:\n    - name: api\n      path: api\n      build: bash\n    - name: web\n      path: web\n      build: bash\n",
+	})
+	code, stdout, stderr := runSetup(t, repo, "--import")
+	if code != 0 {
+		t.Fatalf("exit %d\nstdout %s\nstderr %s", code, stdout, stderr)
+	}
+	if text := mustReadFile(t, filepath.Join(repo, ".ai-workflow/release.yaml")); strings.Contains(text, "version_files") {
+		t.Errorf("version_files written with several projects:\n%s", text)
+	}
+	if !strings.Contains(stderr, "warning: version files package.json were not added: release.projects has 2 projects") {
+		t.Errorf("no warning names the version files:\n%s", stderr)
 	}
 }

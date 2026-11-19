@@ -194,7 +194,7 @@ func importSemanticRelease(dir string) provider.Response {
 	if err != nil {
 		return failed("%v", err)
 	}
-	data := ImportData{Source: imported.Source, Config: text}
+	data := ImportData{Source: imported.Source, Config: text, VersionFiles: imported.VersionFiles}
 	for _, w := range imported.Warnings {
 		data.Warnings = append(data.Warnings, w.String())
 	}

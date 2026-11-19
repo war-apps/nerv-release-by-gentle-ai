@@ -128,23 +128,93 @@ func ImportSection(data []byte, provider, imported string, force bool) (string, 
 		}
 	}
 	block.Content = append(added, block.Content...)
+	out, err := setSection(doc, section)
+	if err != nil {
+		return "", nil, err
+	}
+	return out, notes, nil
+}
 
+// setSection writes section as the release: block of doc and returns the
+// text, which must load (or have no release section to configure).
+func setSection(doc *config.Document, section *yaml.Node) (string, error) {
 	var b bytes.Buffer
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)
 	root := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{scalarNode(SectionKey), section}}
 	if err := enc.Encode(root); err != nil {
-		return "", nil, err
+		return "", err
 	}
 	if err := enc.Close(); err != nil {
-		return "", nil, err
+		return "", err
 	}
 	doc.SetBlock(SectionKey, strings.TrimRight(b.String(), "\n"))
 	out := doc.String()
 	if _, err := parse([]byte(out)); err != nil && !errors.Is(err, ErrNotConfigured) {
-		return "", nil, err
+		return "", err
 	}
-	return out, notes, nil
+	return out, nil
+}
+
+// ImportVersionFiles returns the .ai-workflow/release.yaml text data with
+// files (repository-relative version files an import found, such as
+// semantic-release's package.json) appended to the version_files of
+// release.projects' only project: each file it does not list yet, after
+// its own entries, which are kept with their comments, as is the rest of
+// the file; notes says what was added. With no project or several, no
+// project is chosen: data is returned unchanged and warnings lists the
+// files to add by hand.
+func ImportVersionFiles(data []byte, files []string) (string, []string, []string, error) {
+	if len(files) == 0 {
+		return string(data), nil, nil, nil
+	}
+	section, err := yamlsection.Locate(data, SectionKey)
+	if err != nil && !errors.Is(err, yamlsection.ErrAbsent) {
+		return "", nil, nil, err
+	}
+	projects := mappingValue(section, "projects")
+	if projects == nil || projects.Kind != yaml.SequenceNode || len(projects.Content) != 1 || projects.Content[0].Kind != yaml.MappingNode {
+		where := "release.projects has no project: add them to the version_files of the project that releases them"
+		if projects != nil && projects.Kind == yaml.SequenceNode && len(projects.Content) > 1 {
+			where = fmt.Sprintf("release.projects has %d projects: add each to the version_files of the project that releases it", len(projects.Content))
+		}
+		return string(data), nil, []string{fmt.Sprintf("version files %s were not added: %s", strings.Join(files, ", "), where)}, nil
+	}
+	project := projects.Content[0]
+	list := mappingValue(project, "version_files")
+	switch {
+	case list == nil:
+		list = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		project.Content = append(project.Content, scalarNode("version_files"), list)
+	case list.ShortTag() == "!!null":
+		*list = yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	case list.Kind != yaml.SequenceNode:
+		return "", nil, nil, &ValidationError{Problems: []string{SectionKey + ".projects[0].version_files: must be a list"}}
+	}
+	listed := map[string]bool{}
+	for _, entry := range list.Content {
+		var f VersionFile
+		if entry.Decode(&f) == nil && f.Path != "" {
+			listed[normalize(f.Path)] = true
+		}
+	}
+	var added []string
+	for _, file := range files {
+		if listed[normalize(file)] {
+			continue
+		}
+		listed[normalize(file)] = true
+		list.Content = append(list.Content, scalarNode(file))
+		added = append(added, file)
+	}
+	if len(added) == 0 {
+		return string(data), nil, nil, nil
+	}
+	out, err := setSection(config.Parse(string(data)), section)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	return out, []string{fmt.Sprintf("added %s to %s.projects[0].version_files", strings.Join(added, ", "), SectionKey)}, nil, nil
 }
 
 // sameValue reports whether two YAML nodes hold the same data, whatever

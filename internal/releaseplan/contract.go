@@ -102,6 +102,9 @@ type ImportData struct {
 	Config string `json:"config,omitempty"`
 	// Warnings are the parts that could not be translated.
 	Warnings []string `json:"warnings,omitempty"`
+	// VersionFiles are the files the imported configuration writes the
+	// version into, repository-relative, for the project's version_files.
+	VersionFiles []string `json:"version_files,omitempty"`
 	// Absent is set when there is no configuration to import (status
 	// skipped); Manual names a configuration that must be moved by hand,
 	// such as a JavaScript one (status blocked).
