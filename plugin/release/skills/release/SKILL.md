@@ -112,12 +112,45 @@ A build provider is required for every project (`projects[].build`, else `releas
 | `test_service` | `providers.docker-compose` | The service `docker compose run --rm` runs for the tests. |
 | `shared_host` | `providers.bash` | Disables the reused dotnet build servers on a shared host. |
 | `images` | project | The images saved into the artifact and recorded for deploy to push: a plain reference with `${version}`, or `{name: <repository>, tags: [version, channel, latest]}` (default all three: the version always, the channel off the default channel, `latest` on it). The build makes `<name>:<version>`; release `docker tag`s the others. |
-| `version_files` | project | `.csproj`/`.props` files whose `<Version>` and `<PackageReleaseNotes>` are written in the clone. |
+| `version_files` | project | The files the release writes its version into, in the clone (§2.4). |
 | `coverage` | project | Floors `{line, branch, method}` over the Cobertura reports in `$NERV_RELEASE_COVERAGE_DIR`, or `dir` where a compose test service writes them. |
 
 **Stages** run in this order: `restore`, `lint`, `build`, `test`, `coverage`, `package`. With `bash` each one the project uses is a command `{run, shell, env, workdir, timeout}` (`shell`: `bash`, `pwsh` or `node`). With `docker-compose` only `restore`, `lint` and `coverage` may be written: compose builds, tests (`test_service`) and packages (`docker tag` and `docker save` of `images`) itself. The `package` stage writes what the artifact keeps into `$NERV_RELEASE_OUTPUTS_DIR`. There is no `publish` stage.
 
 **Hooks**: `before_<stage>`, `after_<stage>`, `prepare` (after the pipeline, before the artifact is written) and `fail`, each a list of commands. Publishing hooks belong to deploy.
+
+### 2.4 Version files
+
+`projects[].version_files` lists the files the release writes the new version into, in the release clone, in order, before the stages; each file's new content is captured once into the artifact's `release-files/` and committed by deploy. Paths are relative to the repository root (not the project's path).
+
+An entry is a **path** (its format inferred from the file name) or a **mapping** `{path, key | keys, pattern, format, style}`:
+
+| Format | Inferred for | Default keys | Key syntax |
+|---|---|---|---|
+| `msbuild` | `*.csproj`, `*.fsproj`, `*.vbproj`, `*.props`, `*.targets` | `<Version>` (inserted when missing; `<PackageReleaseNotes>` gets the release link when origin is public) | none |
+| `json` | `package.json`, `composer.json`; `package-lock.json` | `version`; `version` and `packages[""].version` | dotted, `[""]`/`["a.b"]` for odd names: `packages[""].version` |
+| `toml` | `Cargo.toml`; `pyproject.toml` | `package.version`; the first of `project.version`, `tool.poetry.version` that exists | dotted: `workspace.package.version` |
+| `yaml` | `Chart.yaml`; `pubspec.yaml` | `version` and `appVersion`; `version` | dotted |
+| `xml` | `pom.xml` | `project/version` | slash path of element names |
+| `properties` | `gradle.properties` | `version` | the property name itself (`app.version`) |
+| `text` | `VERSION`, `VERSION.txt` | the whole file (only the version, trailing line breaks kept) | none |
+| `regex` | never inferred | none | `pattern` with a named group `(?P<version>...)`; every match's group is replaced |
+
+Every edit replaces only the old value's bytes: BOM, line endings, comments, indentation and key order stay as they are. A missing key, or a pattern with no match, fails the build (only `msbuild` inserts). `key` is one key, `keys` several (not both). `style: pep440` writes prereleases the Python way (`1.2.0-rc.1` → `1.2.0rc1`; only `alpha.N`, `beta.N`, `rc.N`). Any other file needs `format` (and `keys` or `pattern`).
+
+The escape hatch is a **command** and the files it changes, `{command, files, style}`: the command runs with `bash` in the clone, `{version}` replaced by the version, and `files` are captured after it:
+
+```yaml
+version_files:
+  - src/api/Api.csproj
+  - package.json
+  - { path: src/app/__init__.py, format: regex, pattern: '__version__ = "(?P<version>[^"]+)"', style: pep440 }
+  - { path: deploy/values.yaml, format: yaml, key: image.tag }
+  - command: npm version {version} --no-git-tag-version --allow-same-version
+    files: [package.json, package-lock.json]
+```
+
+Every entry is checked when the section loads: an unknown format, keys a format does not take, a bad pattern, a path with a backslash, an absolute path or one with `..` are errors. At build time a version file (and the CHANGELOG) reached through a symlink or a junction, or that is not a regular file, is refused: a committed symlink must never make the release write outside the clone.
 
 ## 3. `nerv-release version next`
 

@@ -10,8 +10,7 @@ Go release engine out as a standalone tool, so a repository can compute
 its next version, build, test, package and deploy it without pulling in
 the rest of the NERV workflow. This repository is under initial
 development (see `odd/tasks/initial-release.md`); the CLI below works
-today, but generic `version_files` (U7) and the Windows CI gate (U8,
-R-S9) are still pending.
+today.
 
 ## Install
 
@@ -128,6 +127,14 @@ everything else — comments, key order, formatting — byte for byte.
 
 Build artifacts are written to `.nerv/artifacts/<project>/<version>/`
 in the repository, regardless of which file configured the build.
+
+Each project's `version_files` lists the files the release writes its
+version into, for any ecosystem: `package.json`, `package-lock.json`,
+`composer.json`, `Cargo.toml`, `pyproject.toml`, `Chart.yaml`,
+`pubspec.yaml`, `pom.xml`, `gradle.properties`, `VERSION` and MSBuild
+project files by name, any other file through a format with keys or a
+regex, and a `{command, files}` escape hatch. Only the old value's bytes
+change. See [docs/release-commands.md](docs/release-commands.md#version-files).
 
 ## Relation to nerv
 

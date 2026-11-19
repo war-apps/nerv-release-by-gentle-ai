@@ -6,3 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- Generic `version_files`: an entry is a path, its format inferred from
+  the file name (`package.json`, `package-lock.json`, `composer.json`,
+  `Cargo.toml`, `pyproject.toml`, `Chart.yaml`, `pubspec.yaml`, `pom.xml`,
+  `gradle.properties`, `VERSION`, `VERSION.txt`, MSBuild project files), or
+  a mapping `{path, key | keys, pattern, format, style}` for the msbuild,
+  json, toml, yaml, xml, properties, text and regex formats; `style: pep440`
+  for Python versions; `{command, files}` runs a command and captures the
+  files it changes. Edits replace only the old value's bytes. Entries are
+  validated when the section loads; backslashes, absolute paths, `..`,
+  symlinks and junctions are refused.
+- `nerv-release setup --import` adds `@semantic-release/npm`'s
+  `package.json` (and an existing `package-lock.json`) and the
+  `@semantic-release/git` assets in a known format to the only project's
+  `version_files`, or names them in a warning when there is no project or
+  several; `/release:setup` detects version files and proposes them.

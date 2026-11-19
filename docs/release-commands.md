@@ -32,6 +32,78 @@ See `odd/tasks/initial-release.md` for the full configuration shape
 (stages, hooks, coverage, version files, images) as it is ported from
 nerv.
 
+## Version files
+
+`release.projects[].version_files` lists the files `nerv-release build`
+writes the new version into, in the release clone, in order, before the
+first stage. Each file's new content is captured once into the
+artifact's `release-files/`, for deploy's release commit. Paths are
+relative to the repository root, with forward slashes.
+
+An entry is a path, whose format is inferred from the file name, or a
+mapping `{path, key | keys, pattern, format, style}`:
+
+```yaml
+release:
+  projects:
+    - name: api
+      path: .
+      build: bash
+      version_files:
+        - src/Api/Api.csproj                      # msbuild
+        - package.json                            # json: version
+        - package-lock.json                       # json: version, packages[""].version
+        - { path: deploy/values.yaml, format: yaml, key: image.tag }
+        - { path: src/app/__init__.py, format: regex, pattern: '__version__ = "(?P<version>[^"]+)"', style: pep440 }
+        - command: npm version {version} --no-git-tag-version --allow-same-version
+          files: [package.json, package-lock.json]
+```
+
+| Format | Inferred for | Default keys |
+|---|---|---|
+| `msbuild` | `*.csproj`, `*.fsproj`, `*.vbproj`, `*.props`, `*.targets` | `<Version>`, inserted when missing; `<PackageReleaseNotes>` gets the release link when origin has a public address |
+| `json` | `package.json`, `composer.json` / `package-lock.json` | `version` / `version` and `packages[""].version` |
+| `toml` | `Cargo.toml` / `pyproject.toml` | `package.version` / the first of `project.version`, `tool.poetry.version` the file has |
+| `yaml` | `Chart.yaml` / `pubspec.yaml` | `version` and `appVersion` / `version` |
+| `xml` | `pom.xml` | `project/version` |
+| `properties` | `gradle.properties` | `version` |
+| `text` | `VERSION`, `VERSION.txt` | the whole file, which holds only the version (trailing line breaks kept) |
+| `regex` | never inferred | `pattern`, with a named group `(?P<version>...)`: every match's group is replaced |
+
+- **Keys.** `key` is one key and `keys` several (not both). json, toml
+  and yaml keys are dotted paths, a segment bracket-quoted when it has a
+  dot or is empty (`packages[""].version`, `["a.b"].version`); an xml key
+  is a slash path of element names (`project/version`); a properties key
+  is the property name (`app.version`). msbuild, text and regex take no
+  keys. A file the table does not name needs `format`, plus `keys` for
+  json, toml, yaml, xml and properties, or `pattern` for regex.
+- **Edits.** Only the old value's bytes are replaced: BOM, line endings,
+  comments, indentation and key order stay byte for byte. A missing key,
+  or a pattern with no match, fails the build; only msbuild inserts.
+- **`style: pep440`** writes the version the Python way: `1.2.0-alpha.3`
+  → `1.2.0a3`, `beta.N` → `bN`, `rc.N` → `rcN`; a release is unchanged.
+  Any other prerelease identifier, or build metadata, fails the build.
+- **`{command, files, style}`** is the escape hatch: the command runs in
+  the release clone through `bash`, with `{version}` replaced by the
+  version (in `style`) and the variables below, and each of `files` is
+  captured after it ran. It takes no `key`, `keys`, `pattern` or `format`.
+- **Paths.** Every entry is validated when the section loads: an
+  unknown format, keys a format does not take, a pattern without its
+  group, a path with a backslash, an absolute path, or one that leaves
+  the repository (`..`) is a configuration error. At build time a
+  version file, a command's file or the CHANGELOG reached through a
+  symlink or a junction, or that is not a regular file, is refused, so a
+  committed symlink can never make the release write outside the clone.
+
+`nerv-release setup --import` adds the files semantic-release writes:
+`@semantic-release/npm`'s `package.json` (under `pkgRoot`, with
+`package-lock.json` when it exists) and each `@semantic-release/git` asset
+that is a plain path in a known format, to the only project's
+`version_files`; with no project or several it prints them in a warning.
+Globs and other assets are warnings too; the changelog asset is the
+`changelog` key's. `/release:setup` detects the known files of each
+project and proposes them.
+
 ## Environment variables
 
 `nerv-release build` runs each stage's and hook's command (and script

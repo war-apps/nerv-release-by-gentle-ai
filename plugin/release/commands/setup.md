@@ -46,7 +46,7 @@ comments) is in English.
    of `release:` and is the user's seed for new sections: it never applies
    at run time. Its other `release:` keys, if any, no longer apply either
    (`nerv migrate --user` moves them under `defaults.release`). Hold the
-   seed for step 4 below.
+   seed for step 5 below.
 
 Only the `release:` block is added (at the end of the file, after one blank
 line) or replaced (from the `release:` line up to the next line that starts at
@@ -64,17 +64,26 @@ Look for `package.json` `release`, `.releaserc`, `.releaserc.json`,
 - **A JSON or YAML config:** run `nerv-release setup --import --dry-run`. It
   prints the translated engine keys under `release.providers.conventional-commits` (`branches`, `release_rules`,
   `note_keywords`, `tag_format`, `changelog`) and one warning per part it
-  cannot translate (the `npm` and `exec` plugins, `presetConfig.types`,
-  `extends`, maintenance branches, an invalid prerelease branch). Show the
-  translation and every warning as they are, and say where each warned part
-  goes: `exec` commands become stages or hooks (step 4), `@semantic-release/git`
-  and `@semantic-release/github` go to the `deploy:` section (`/release:deploy-setup`),
-  `npm` publishing goes to a deploy target. Ask once whether to import it;
-  on an explicit yes, run `nerv-release setup --import` and continue from the
-  section it wrote.
+  cannot translate (npm publishing, the `exec` plugin, `presetConfig.types`,
+  `extends`, maintenance branches, an invalid prerelease branch, a
+  `@semantic-release/git` asset that is a glob or not a known version file).
+  The files semantic-release writes the version into become version files:
+  `@semantic-release/npm`'s `package.json` (under its `pkgRoot`, plus
+  `package-lock.json` when the repository has one) and each
+  `@semantic-release/git` asset that is a plain path in a known format (the
+  changelog asset is the `changelog` key's). With exactly one project in
+  `release.projects` they are appended to its `version_files`; otherwise a
+  warning lists them and nothing is written for them (step 4 places them).
+  Show the translation and every warning as they are, and say where each
+  warned part goes: `exec` commands become stages or hooks (step 5), the
+  release commit of `@semantic-release/git` and `@semantic-release/github`
+  go to the `deploy:` section (`/release:deploy-setup`), `npm` publishing
+  goes to a deploy target. Ask once whether to import it; on an explicit
+  yes, run `nerv-release setup --import` and continue from the section it
+  wrote.
 - **A JavaScript config:** it is never imported. Read it, say it must be
   migrated by hand, and propose the equivalent engine keys yourself (the
-  questions of step 5 when it is unclear).
+  questions of step 6 when it is unclear).
 - **None:** propose the default `branches` (skill §2.1), adjusted to the
   repository's branch names (`master`, no `release/*`).
 
@@ -97,7 +106,45 @@ built or run.
 | Release scripts (`scripts/*`, exec commands, CI steps) | Steps release covers (a bump-csproj script is `version_files`), steps that become stages, and the rest (hooks). Publishing steps (docker push, nuget push, npm publish) belong to deploy. |
 | Layout and `git log --format=%s -200` | Monorepo or not, and the conventional-commit scopes used per folder. |
 
-## 4. Propose the complete section
+## 4. Detect version files
+
+For each project, look for the files that carry its version, at the
+project's `path` (and the repository root for a single project). Every
+path in `version_files` is relative to the repository root.
+
+| File | Format inferred | What the release writes |
+|---|---|---|
+| `package.json`, `composer.json` | json | `version` |
+| `package-lock.json` | json | `version` and `packages[""].version` |
+| `Cargo.toml` | toml | `package.version` |
+| `pyproject.toml` | toml | the first of `project.version`, `tool.poetry.version` it has |
+| `Chart.yaml` | yaml | `version` and `appVersion` |
+| `pubspec.yaml` | yaml | `version` |
+| `pom.xml` | xml | `project/version` |
+| `gradle.properties` | properties | `version` |
+| `VERSION`, `VERSION.txt` | text | the whole file |
+| MSBuild project files (`.csproj`, `.fsproj`, `.vbproj`, `.props`, `.targets`) | msbuild | `<Version>` (inserted when missing): the deployable project, or the `Directory.Build.props` that holds it; never test projects |
+
+Skip a file that has no version to write (a `package.json` without
+`version`, a `Cargo.toml` that is only a workspace) and a file the
+section already lists (the import may have added it). Show the files you
+found per project, one line each with what is written, and then
+ask whether to add them to that project's `version_files`; add only those
+the user accepts. Nothing is written before the final confirmation of step 6.
+
+For a file the table does not cover, or another key, explain the mapping
+form `{path, key | keys, pattern, format, style}`: `format` (`json`,
+`toml`, `yaml`, `xml`, `properties`, `text`, `regex`), `key` or `keys`
+(dotted, or a slash path for xml), or `pattern` with a named group
+`(?P<version>...)` for `regex`, and `style: pep440` for a Python version
+(`1.2.0rc1`). When no format fits, the escape hatch is `{command, files}`:
+a command run in the release clone with `{version}` replaced, and the
+files it changes (e.g. `npm version {version} --no-git-tag-version
+--allow-same-version` with `package.json` and `package-lock.json`). A
+bump script detected in step 3 is usually one of these entries, not a
+stage. The skill's §2.4 has the rules.
+
+## 5. Propose the complete section
 
 Show the whole `release:` section as one YAML block, then one line of reason
 per non-obvious choice. Rules:
@@ -133,14 +180,16 @@ per non-obvious choice. Rules:
     `docker save -o "$NERV_RELEASE_OUTPUTS_DIR/<name>.tar" <image>` after a
     `docker build`). Never a publish step.
 - **`version_files`**, **`coverage`**, **`providers.bash.shared_host`**,
-  **`submodules`**, **hooks** and **`depends_on`** as the skill's §2 says.
+  **`submodules`**, **hooks** and **`depends_on`** as the skill's §2 says;
+  `version_files` holds what the import added and the files the user
+  accepted in step 4.
   A pinned .NET SDK becomes a `before_restore` hook writing `global.json`.
 - **A 4.2.0 `release:` block**: carry its projects, paths, scopes,
   `tag_format`, `changelog`, `depends_on`, `build`, `stages` and `hooks`
   over; drop `semantic_release:`; rewrite presets as stage commands; list
   what was moved where, and what goes to `deploy:`.
 
-## 5. Ask only what cannot be detected
+## 6. Ask only what cannot be detected
 
 Ask ONE question at a time, each with a recommended default, then STOP and
 wait for the answer before the next one. Never assume an answer. Always ask,
@@ -160,7 +209,7 @@ branch names or prerelease ids the import warned about.
 After the answers, show the final section in full and ask once whether to
 write it. Write only on an explicit yes.
 
-## 6. Write and validate
+## 7. Write and validate
 
 1. Write the section into `.ai-workflow/release.yaml` as described in step 1.
 2. Run `nerv-release version next --offline --json`, and in a monorepo also with
@@ -173,7 +222,7 @@ write it. Write only on an explicit yes.
    release"), channel, tag, last release. Say the result used local tags
    only (`--offline`).
 
-## 7. Next steps
+## 8. Next steps
 
 Tell the user, without doing any of it:
 

@@ -89,6 +89,31 @@ func TestReleasePlugin_SetupNamesImportAndProviders(t *testing.T) {
 		"`lint`", "`test`", "nerv-release adds no stage of its own", "the artifacts stay local")
 }
 
+// R-S7: /release:setup detects the version files the repository has and
+// proposes them for version_files, asking before it writes; it explains
+// the mapping form and the command escape hatch. The release skill
+// documents every format, not only MSBuild.
+func TestReleasePlugin_SetupProposesVersionFiles(t *testing.T) {
+	read := func(path string) string {
+		data, err := fs.ReadFile(CoreFS(), path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		return string(data)
+	}
+	assertContainsAll(t, "commands/setup.md", read("commands/setup.md"),
+		"## 4. Detect version files",
+		"`package.json`", "`package-lock.json`", "`composer.json`", "`Cargo.toml`", "`pyproject.toml`",
+		"`Chart.yaml`", "`pubspec.yaml`", "`pom.xml`", "`gradle.properties`", "`VERSION`", "`VERSION.txt`",
+		"`.csproj`", "`.props`",
+		"`key`", "`keys`", "`pattern`", "`format`", "`style: pep440`", "`{command, files}`",
+		"ask whether to add them")
+	assertContainsAll(t, "skills/release/SKILL.md", read("skills/release/SKILL.md"),
+		"msbuild", "json", "toml", "yaml", "xml", "properties", "text", "regex",
+		"`packages[\"\"].version`", "(?P<version>", "pep440", "command:", "files:",
+		"symlink", "backslash")
+}
+
 // semanticReleaseRun matches a command line that runs semantic-release.
 var semanticReleaseRun = regexp.MustCompile(`(?im)(^\s*(\$\s*)?|\b(npx|npm\s+exec|pnpm\s+(dlx|exec)|yarn(\s+dlx)?|bunx)\s+)semantic-release(\s|$)`)
 
