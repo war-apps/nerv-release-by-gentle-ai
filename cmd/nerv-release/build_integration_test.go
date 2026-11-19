@@ -80,15 +80,27 @@ func (g gitDir) commit(message string, files ...string) {
 	g.git("commit", "-q", "-m", message)
 }
 
+// canonicalTempDir is t.TempDir with symlinks and Windows 8.3 short names
+// resolved (CI runners' TEMP is C:\Users\RUNNER~1\...), the form git and
+// nerv-release report paths in.
+func canonicalTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // newReleaseRepos returns a bare origin (HEAD on main, as on a hosted origin)
 // and a working clone of it on main.
 func newReleaseRepos(t *testing.T) (origin, work gitDir) {
 	t.Helper()
-	origin = gitDir{t, filepath.Join(t.TempDir(), "origin.git")}
+	origin = gitDir{t, filepath.Join(canonicalTempDir(t), "origin.git")}
 	if out, err := exec.Command("git", "init", "-q", "--bare", "-b", "main", origin.dir).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	work = gitDir{t, filepath.Join(t.TempDir(), "widgets")}
+	work = gitDir{t, filepath.Join(canonicalTempDir(t), "widgets")}
 	if out, err := exec.Command("git", "init", "-q", "-b", "main", work.dir).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
