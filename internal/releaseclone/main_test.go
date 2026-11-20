@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/releaseplan"
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/testenv"
 )
 
 // TestMain lets the version engine run through this test binary, as nerv
@@ -15,5 +16,5 @@ func TestMain(m *testing.M) {
 	if len(os.Args) == 4 && os.Args[1] == "provider" {
 		os.Exit(releaseplan.RunNative(context.Background(), os.Args[2], os.Args[3], os.Stdin, os.Stdout, os.Stderr, releaseplan.NativeDeps{}))
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.Run(m))
 }

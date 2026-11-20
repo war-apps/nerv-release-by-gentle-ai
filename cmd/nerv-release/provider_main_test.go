@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"testing"
+
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/testenv"
 )
 
 // TestMain lets the release flow under test run its native providers
@@ -17,5 +19,5 @@ func TestMain(m *testing.M) {
 		opts := defaultOptions()
 		os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, opts))
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.Run(m))
 }
