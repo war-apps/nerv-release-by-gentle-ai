@@ -14,6 +14,7 @@ import (
 
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/deploy"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/proc"
+	"github.com/war-apps/nerv-release-by-gentle-ai/internal/testenv"
 )
 
 // fakeTools are the tools deploy runs that the tests replace: each is a
@@ -40,7 +41,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	fakeBin = dir
-	code := m.Run()
+	code := testenv.Run(m)
 	os.RemoveAll(dir)
 	os.Exit(code)
 }

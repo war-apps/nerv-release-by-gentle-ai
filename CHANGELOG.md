@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-11-20
+
+### Fixed
+
+- The tests no longer read or write the developer's real user config:
+  a test that faked only the home directory still reached
+  `%AppData%\ai-workflow\release.yaml` on Windows (and
+  `$XDG_CONFIG_HOME` elsewhere) through nerv-kit's user config
+  directory, so `go test` left a test value in the real file. Every test
+  binary that can reach that directory now points it at a temporary one.
+
 ## [1.0.0] - 2026-11-20
 
 First release: nerv's release extension as an independent tool of the
