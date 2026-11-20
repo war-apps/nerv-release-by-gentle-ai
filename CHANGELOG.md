@@ -5,10 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-11-20
+
+First release: nerv's release extension as an independent tool of the
+NERV ecosystem. It installs with `scripts/install.sh` or
+`scripts/install.ps1` and works without nerv, Windows included; on a
+machine with nerv's own `release@nerv` plugin or its providers,
+`nerv-release install` disables them after a successful install so
+`/release:*` is not duplicated.
 
 ### Added
 
+- `nerv-release version next`, `build`, `deploy` and `setup --import`:
+  the version engine (conventional commits, channels per branch), builds
+  that package what origin has into a local artifact without writing to
+  git, and deploys that make the release commit, the tag, the git host
+  release, the image publish and the targets.
+- `nerv-release install`, `upgrade`, `configure`, `init` and `version`.
+- The `nerv-release` plugin marketplace: the `release` plugin
+  (`/release:*` commands and the `release` skill) and its six providers
+  (`release-conventional-commits`, `release-bash`,
+  `release-docker-compose`, `release-github`, `release-script`,
+  `release-ssh-compose`).
 - Generic `version_files`: an entry is a path, its format inferred from
   the file name (`package.json`, `package-lock.json`, `composer.json`,
   `Cargo.toml`, `pyproject.toml`, `Chart.yaml`, `pubspec.yaml`, `pom.xml`,
