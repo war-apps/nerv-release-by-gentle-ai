@@ -1,0 +1,48 @@
+version: 2
+
+project_name: nerv-release
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: nerv-release
+    main: ./cmd/nerv-release
+    binary: nerv-release
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/war-apps/nerv-release-by-gentle-ai/internal/version.Binary={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: nerv-release
+    ids: [nerv-release]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  disable: true
+
+release:
+  mode: append
+  name_template: "{{ .Tag }}"
