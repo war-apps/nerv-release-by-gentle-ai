@@ -1,0 +1,26 @@
+# Script build of the NERV release extension (contract: docs/extensions.md
+# and internal/releaseplan/contract.go): every pipeline stage runs the
+# project's own command under its shell (bash by default, pwsh or node),
+# and the images the commands build are saved into the artifact. A native
+# provider: its operations run nerv-release's own hidden `nerv-release
+# provider release-bash <operation>`. Its keys live under
+# release.providers.bash, and a project overrides them under
+# release.projects[].providers.bash.
+#
+# Ported from nerv's plugins/release-bash/provider.yaml as-is, renamed.
+name: bash
+extension: release
+slot: build
+contract_version: 1
+runtime: exec
+config:
+  - key: shared_host
+    scope: repo
+    type: bool
+    default: "false"
+    prompt: Give the restore, lint, build, test and package commands the build-server-safe dotnet environment
+operations:
+  validate:
+    - argv: ["{nerv-release}", provider, release-bash, validate]
+  plan:
+    - argv: ["{nerv-release}", provider, release-bash, plan]

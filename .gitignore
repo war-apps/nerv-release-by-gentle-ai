@@ -1,0 +1,12 @@
+# Build artifacts
+/dist/
+/nerv-release
+/nerv-release.exe
+
+# Go
+*.test
+*.out
+
+# OS
+.DS_Store
+Thumbs.db
