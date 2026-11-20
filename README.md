@@ -8,9 +8,7 @@ on a machine with no nerv at all, Windows included.
 `nerv-release` carries nerv's own `release` plugin, its 6 providers and the
 Go release engine out as a standalone tool, so a repository can compute
 its next version, build, test, package and deploy it without pulling in
-the rest of the NERV workflow. This repository is under initial
-development (see `odd/tasks/initial-release.md`); the CLI below works
-today.
+the rest of the NERV workflow.
 
 ## Install
 

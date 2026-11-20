@@ -28,15 +28,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Mirrors CI's own exclusion (TODO U8, odd/tasks/initial-release.md
-      # L8): internal/deployrun is skipped here too, so the release gate
-      # never depends on tests that can reach a real docker/gh.
-      - name: go test (excludes internal/deployrun; see CI workflow TODO)
+      # Every package, as in CI: internal/deployrun's fakes never reach a
+      # real docker or gh.
+      - name: go test
         shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t pkgs < <(go list ./... | grep -v '/internal/deployrun$')
-          go test -count=1 "${pkgs[@]}"
+        run: go test -count=1 -timeout 20m ./...
 
       - name: install-sh.test.sh
         shell: bash
