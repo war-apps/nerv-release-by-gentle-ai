@@ -1,9 +1,10 @@
-# Release engine: `nerv-release version next` and `nerv-release build`
+# Release configuration reference
 
 This page documents the configuration (`<repo>/.ai-workflow/release.yaml`)
-behind `nerv-release version next`, `nerv-release build` and `nerv-release
-setup --import` (see `odd/tasks/initial-release.md`). `nerv-release deploy`
-is not implemented yet.
+behind `nerv-release version next`, `nerv-release build`,
+`nerv-release deploy` and `nerv-release setup --import`: the `release:`
+section (version engine, build providers, projects, version files, stage
+environment) and the `deploy:` section (git host, targets, git).
 
 The version engine is native: it gives the version, the tag, the release
 notes and the CHANGELOG section that semantic-release with the
@@ -22,15 +23,20 @@ release:
 ```
 
 The `release:` section has two provider slots: the **version engine**
-(`release.version`, by default `conventional-commits`, today's native
+(`release.version`, by default `conventional-commits`, the native
 engine) and the **build** (`release.build` for every project, overridden
-by `release.projects[].build`: `bash`, or `docker-compose` once ported).
+by `release.projects[].build`: `bash` or `docker-compose`). A provider's
+keys live under `release.providers.<provider>`, and a project overrides a
+build provider's keys under `release.projects[].providers.<provider>`.
 A dependency's bump defaults to `patch`; a stage command without a shell
-defaults to `bash`.
+defaults to `bash`. Unknown keys are refused, with a path-qualified
+message per problem.
 
-See `odd/tasks/initial-release.md` for the full configuration shape
-(stages, hooks, coverage, version files, images) as it is ported from
-nerv.
+The full key-by-key shape (branches, release rules, tag format,
+changelog, stages, hooks, coverage, images) is the `release` skill's
+[configuration section](../plugin/release/skills/release/SKILL.md#2-configuration);
+each provider's keys are in its README under
+[plugin/extensions/](../plugin/extensions/).
 
 ## Version files
 
@@ -127,3 +133,34 @@ file) with the inherited environment, the command's own `env`, and these
 | `NERV_RELEASE_ARTIFACTS_DIR` | Per-project directory for build outputs, outside the repository. |
 | `NERV_RELEASE_OUTPUTS_DIR` | `$NERV_RELEASE_ARTIFACTS_DIR/outputs`, emptied before the run: what the package stage writes there becomes the artifact's `outputs/`. |
 | `NERV_RELEASE_COVERAGE_DIR` | With `coverage`, the directory the coverage check searches for `*.cobertura.xml` reports (`coverage.dir` in the clone, or `$NERV_RELEASE_ARTIFACTS_DIR/coverage`); not set otherwise. |
+
+## Deploy section
+
+`nerv-release deploy --artifact <dir>` reads the `deploy:` section:
+
+```yaml
+deploy:
+  host: github                    # git host provider (release-github); empty creates no host release
+  publish: true                   # push the artifact's images in the publish step (default)
+  targets:                        # optional; deployed in this order
+    - name: staging
+      provider: ssh-compose       # target provider: ssh-compose or script
+      config:
+        environment: staging
+  git:
+    commit_message: "chore(release): ${nextRelease.version} [skip ci]
+
+${nextRelease.notes}"
+    remote: origin                # cloned and pushed to (default)
+```
+
+`git.commit_message` takes `${nextRelease.version}`, `${nextRelease.gitTag}`,
+`${nextRelease.channel}`, `${nextRelease.notes}` and the short forms
+`${version}`, `${tag}`, `${channel}`, `${notes}`. A target's provider key
+comes from its `config`; when unset, from `deploy.providers.<provider>.<key>`
+in the global `release.yaml`; otherwise from the provider's default. A
+`scope: user` key (credentials, local paths: `release-ssh-compose`'s
+`ssh_auth`, `ssh_key_file`, `ssh_known_hosts`, `ssh_connect_timeout`,
+`infisical_domain`) belongs only in the global file, set with
+`nerv-release configure`. The full contract is the `deploy` skill's
+[configuration section](../plugin/release/skills/deploy/SKILL.md#2-configuration).
