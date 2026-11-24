@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-11-24
+
+### Fixed
+
+- `nerv-release build -h` ends with its exit codes; a leftover
+  `setup --import` usage block is gone.
+
+### Documentation
+
+- The README covers the requirements per provider, the configuration
+  paths per OS, the key flags and the typical build and deploy flow, the
+  `/release:*` commands, agents and skills, the providers, an annotated
+  `release.yaml`, the build, artifact and deploy flow, uninstalling,
+  upgrading, migrating, exit codes and CI use, and the license; technology
+  badges added. `docs/release-commands.md` is the configuration reference
+  and no longer says deploy is not implemented.
+
 ## [1.0.1] - 2026-11-20
 
 ### Fixed
