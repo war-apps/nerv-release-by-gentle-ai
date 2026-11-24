@@ -77,10 +77,6 @@ packaged (also when there is nothing to release, and a dry run), 1 refused
 project, local branch not equal to origin's, an existing artifact without
 --force, no confirmation), 2 a step or the environment failed, 128 + the
 signal when interrupted.
-
-  nerv-release setup --import [--dry-run]   imports a semantic-release
-                                         configuration (see "nerv-release
-                                         setup --help")
 `
 
 // releaseWorkspace is the release clone nerv-release build works in; *releaseclone.Workspace

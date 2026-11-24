@@ -50,3 +50,19 @@ func TestRun_DispatchesInit(t *testing.T) {
 		t.Errorf("stderr = %q, want init's own usage", stderr.String())
 	}
 }
+
+// nerv-release build -h is build's own help: it ends with its exit codes
+// and carries no other command's usage.
+func TestBuildHelp_IsOnlyBuildsUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"build", "-h"}, &stdout, &stderr, options{}); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+	out := stdout.String() + stderr.String()
+	if strings.Contains(out, "setup --import") {
+		t.Errorf("build -h carries setup's usage:\n%s", out)
+	}
+	if !strings.HasSuffix(strings.TrimRight(out, "\n"), "signal when interrupted.") {
+		t.Errorf("build -h does not end with its exit codes:\n%s", out)
+	}
+}
