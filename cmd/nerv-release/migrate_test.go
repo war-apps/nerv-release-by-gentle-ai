@@ -436,7 +436,13 @@ func TestMigrate_RepositoryBackupsAreIgnoredUnderNerv(t *testing.T) {
 	if len(bak) != 1 || mustReadFile(t, bak[0]) != old {
 		t.Fatalf("backups = %v, want one holding the old file", bak)
 	}
-	containsAll(t, "stdout", stdout, "backups: "+bak[0])
+	// The repository-relative part only: on Windows the temporary root
+	// may print in its long form while t.TempDir gave its 8.3 short form.
+	rel, err := filepath.Rel(w.root, bak[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsAll(t, "stdout", stdout, "backups: ", rel)
 	if got := w.read(".nerv/.gitignore"); got != "*\n" {
 		t.Errorf(".nerv/.gitignore = %q, want \"*\n\"", got)
 	}
