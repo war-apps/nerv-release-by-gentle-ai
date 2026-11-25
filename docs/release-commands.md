@@ -2,7 +2,8 @@
 
 This page documents the configuration (`<repo>/.ai-workflow/release.yaml`)
 behind `nerv-release version next`, `nerv-release build`,
-`nerv-release deploy` and `nerv-release setup --import`: the `release:`
+`nerv-release deploy`, `nerv-release setup --import` and
+`nerv-release migrate`: the `release:`
 section (version engine, build providers, projects, version files, stage
 environment) and the `deploy:` section (git host, targets, git).
 
@@ -109,6 +110,48 @@ that is a plain path in a known format, to the only project's
 Globs and other assets are warnings too; the changelog asset is the
 `changelog` key's. `/release:setup` detects the known files of each
 project and proposes them.
+
+## Migrate
+
+`nerv-release migrate [--cwd <dir>] [--user] [--dry-run]` converts the
+legacy sections nerv moved into `release.yaml`, as nerv 6.6's `nerv
+migrate` converted them in nerv's own file:
+
+| Legacy | Becomes |
+|---|---|
+| `ship:` (5.0.0-alpha.1) | `release:`, its keys moved as below; refused next to a `release:` section |
+| engine keys at the top of `release:`, a project's `build:` mapping | `release.providers.conventional-commits.<key>`; `build: docker-compose` or `bash`, `file`/`test_service`/`shared_host` under the project's `providers.<provider>`, `images`/`version_files`/`coverage` on the project |
+| 4.2.0 `release:` (`semantic_release:`, project presets) | each project `build: bash` with the commands its presets ran (its own stages win), `version_files` and `coverage` from the dotnet preset, `images` from the docker preset; `semantic_release:`, the publish stage and hooks dropped; the semantic-release configuration imported into `release.providers.conventional-commits` |
+| 4.2.0 `pipeline:` | `deploy:` with one `release-ssh-compose` target per `pipeline.deploy` environment (shared settings in each), and `host: github` when origin is GitHub; an existing `deploy:` is kept |
+| `provider: bash` deploy targets | `provider: script` (also in the global file's `deploy:` and `defaults.deploy` with `--user`) |
+| `.ai-workflow/providers/deploy-<name>` | `release-<name>`, `extension: release` |
+
+What has no equivalent (npm and NuGet pushes, `pipeline.sync`,
+`selection: branches`, ...) is printed under "Check by hand", and the
+file gets a `TODO(nerv-release migrate):` comment where it applies. The
+personal `release-ssh-compose` keys of a `pipeline:` (`ssh_auth`,
+`ssh_key_file`, `ssh_known_hosts`, `ssh_connect_timeout`,
+`infisical_domain`) are dropped from the repository file and never
+written to the global `release.yaml`, with or without `--user`: a cloned
+repository must not set a key file, a known_hosts file or an Infisical
+domain for every repository of the user. Each one is printed under
+"Check by hand" with its value and the command that sets it, to run if
+you trust the repository:
+`nerv-release configure --set ssh-compose.<key>=<value>`. `--user`
+converts only the global file's own `provider: bash` targets.
+
+The result must load with today's loaders, or nothing is written.
+Every replaced repository file is backed up under
+`.nerv/backups/release-migrate-<timestamp>/<its repository path>`, never next to
+it in the committed `.ai-workflow/` (the `release.yaml` backup can hold
+personal keys); `.nerv/` gets a `.gitignore` of `*` when it has none.
+The global `release.yaml` is backed up next to it
+(`<file>.bak-migrate-<timestamp>`). The backup paths are printed.
+`--dry-run` prints the plan and writes nothing; a second run prints
+`nothing to migrate`. A symlinked `release.yaml`, `.ai-workflow` or
+`.nerv` folder is refused. Exit codes: 0
+migrated, nothing to migrate or a dry run; 1 refused; 2 usage or
+environment error.
 
 ## Environment variables
 

@@ -37,7 +37,7 @@ which part is not accepted, that `/release:build` takes only `--branch`,
 2. **On a refusal or failure, stop.** Show `error` and the relevant stderr
    lines as they are, in a short message, with the meaning of the exit code
    (§5). For a project without a build provider, a moved or removed key or a 4.2.0
-   `release:` section, suggest `nerv migrate` (or `/release:setup`). `status`
+   `release:` section, suggest `nerv-release migrate` (or `/release:setup`). `status`
    `nothing-to-release` is a normal result: say so and stop.
 
 3. **Present the plan.** In the user's language, one short table, one row

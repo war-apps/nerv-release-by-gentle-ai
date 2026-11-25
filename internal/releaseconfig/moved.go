@@ -76,7 +76,7 @@ func takeMovedKeys(section *yaml.Node) []string {
 			kept = append(kept, section.Content[j], section.Content[j+1])
 			continue
 		}
-		problems = append(problems, fmt.Sprintf("%s.%s: moved to %s.providers.%s.%s, the keys of the version engine (nerv migrate moves it)", SectionKey, key, SectionKey, EngineProvider, key))
+		problems = append(problems, fmt.Sprintf("%s.%s: moved to %s.providers.%s.%s, the keys of the version engine (nerv-release migrate moves it)", SectionKey, key, SectionKey, EngineProvider, key))
 	}
 	section.Content = kept
 

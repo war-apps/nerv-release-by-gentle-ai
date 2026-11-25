@@ -1,6 +1,6 @@
 {
   "name": "release-github",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "GitHub git host for nerv-release deploy: creates the GitHub release of a deployed tag with the gh CLI; installed with nerv-release install",
   "author": { "name": "Walter Rodriguez" }
 }

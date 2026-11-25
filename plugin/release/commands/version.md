@@ -26,7 +26,7 @@ skill first: it is the contract the steps below refer to (§ numbers).
 
 2. **On failure** (any exit code other than 0), show stderr as it is, in a
    short message, with the meaning of the exit code (§3), and stop. For a
-   4.2.0 `release:` section, suggest `nerv migrate` (or `/release:setup`).
+   4.2.0 `release:` section, suggest `nerv-release migrate` (or `/release:setup`).
 
 3. **Present the result.** In the user's language, one short table, one row
    per project:

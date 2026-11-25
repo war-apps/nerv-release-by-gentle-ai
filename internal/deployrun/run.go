@@ -437,7 +437,7 @@ func (d *deployer) manifest(name, slot, at string) (*deployprovider.Manifest, er
 		return nil, refuse("%s: no deploy provider is available", at)
 	}
 	if slot == deployprovider.SlotTarget && name == "bash" {
-		return nil, refuse("%s: the bash deploy target is now named script (release-script): set provider: script, or run nerv migrate (nothing was written)", at)
+		return nil, refuse("%s: the bash deploy target is now named script (release-script): set provider: script, or run nerv-release migrate (nothing was written)", at)
 	}
 	dir := deployprovider.Extension + "-" + name
 	if _, err := fs.Stat(d.o.Providers, dir+"/"+deployprovider.ManifestFile); err != nil {
