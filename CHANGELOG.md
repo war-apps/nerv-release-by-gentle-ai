@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-25
+
+### Added
+
+- `nerv-release migrate [--cwd <dir>] [--user] [--dry-run]` converts the
+  release and deploy configuration of nerv 4.2.0 to 5.x that `nerv migrate`
+  (7.1 and later) moves into `release.yaml` as it was: the 5.0.0-alpha.1
+  `ship:` section and moved engine keys, a 4.2.0 `release:` (its presets
+  become `build: bash` stages, its semantic-release configuration is
+  imported), a 4.2.0 `pipeline:` (one `release-ssh-compose` target per
+  environment, `host: github` when origin is GitHub), deploy targets named
+  `bash` (now `script`) and project providers `deploy-<name>` (now
+  `release-<name>`), with the results nerv 6.6 produced. It never
+  overwrites a key, backs every repository file up under the git-ignored
+  `.nerv/backups/release-migrate-<time>/`, and a second run changes
+  nothing.
+
+### Security
+
+- The personal ssh-compose keys of a converted `pipeline:` never reach the
+  global `release.yaml`: a repository never sets your personal settings.
+  Each is reported with the `nerv-release configure --set` command that
+  sets it by hand.
+
+### Changed
+
+- The refusals of an older nerv's section point to `nerv-release migrate`.
+
 ## [1.0.2] - 2026-11-24
 
 ### Fixed
