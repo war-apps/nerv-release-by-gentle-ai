@@ -94,7 +94,7 @@ func TestRun_BashTargetIsRefusedWithItsNewName(t *testing.T) {
 	e.cfg.Targets = []deployconfig.Target{{Name: "docs", Provider: "bash", Config: map[string]string{"script": "deploy/deploy.sh"}}}
 	before := e.originRefs()
 	rep, err := e.run(e.options())
-	if !refusal.Is(err) || !strings.Contains(err.Error(), "deploy.targets[0] (docs): the bash deploy target is now named script (release-script): set provider: script, or run nerv migrate (nothing was written)") {
+	if !refusal.Is(err) || !strings.Contains(err.Error(), "deploy.targets[0] (docs): the bash deploy target is now named script (release-script): set provider: script, or run nerv-release migrate (nothing was written)") {
 		t.Fatalf("Run: %v, want the renamed-target refusal", err)
 	}
 	if e.originRefs() != before || statuses(rep)["clone"] != StatusNotRun {

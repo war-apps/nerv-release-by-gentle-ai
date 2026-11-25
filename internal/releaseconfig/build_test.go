@@ -116,7 +116,7 @@ func TestLoad_MovedKeysNameTheirNewPlace(t *testing.T) {
 		t.Fatalf("Load = %v, want a validation error", err)
 	}
 	want := []string{
-		"release.branches: moved to release.providers.conventional-commits.branches, the keys of the version engine (nerv migrate moves it)",
+		"release.branches: moved to release.providers.conventional-commits.branches, the keys of the version engine (nerv-release migrate moves it)",
 		"release.tag_format: moved to release.providers.conventional-commits.tag_format",
 		"release.changelog: moved to release.providers.conventional-commits.changelog",
 		"release.projects[0].build.mode: build is the build provider's name now: release.projects[0].build: docker-compose (was mode compose) or release.projects[0].build: bash (was mode script)",

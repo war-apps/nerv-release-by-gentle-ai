@@ -103,4 +103,4 @@ nerv-release deploy --artifact <dir> [--target <name> ...] [--dry-run] [--rebase
 
 ## 6. Migration from `pipeline:`
 
-`nerv pipeline` and the `pipeline:` section are removed. Its `docker` push is the `publish` step of `nerv-release deploy`, and its `deploy` step is the `release-ssh-compose` target (`deploy`, `verify`); `release` is `nerv-release build` then `nerv-release deploy` with `release-github`; the `sync` back-merge is not ported, so merge the release back into `develop` by hand. `nerv migrate` translates the section.
+`nerv pipeline` and the `pipeline:` section are removed. Its `docker` push is the `publish` step of `nerv-release deploy`, and its `deploy` step is the `release-ssh-compose` target (`deploy`, `verify`); `release` is `nerv-release build` then `nerv-release deploy` with `release-github`; the `sync` back-merge is not ported, so merge the release back into `develop` by hand. `nerv-release migrate` translates the section.

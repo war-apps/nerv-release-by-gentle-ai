@@ -127,6 +127,9 @@ Engine commands:
   setup --import [--force] [--dry-run]
                          Import a semantic-release configuration into the
                          release: section (see "nerv-release setup --help")
+  migrate [--cwd <dir>] [--user] [--dry-run]
+                         Convert the legacy release and deploy sections nerv
+                         moved into release.yaml (see "nerv-release migrate --help")
 
 Tool commands:
   install [--no-configure]
@@ -155,6 +158,11 @@ Tool commands:
   semantic-release configuration and proposes the matching `release:`
   section (and the version files it detects) without writing anything
   unless confirmed.
+- `nerv-release migrate` converts the legacy release and deploy
+  sections nerv moved into `.ai-workflow/release.yaml` into today's
+  shape (see [Migrating from nerv](#migrating-from-nerv-or-semantic-release));
+  `--dry-run` writes nothing, `--user` also converts the global
+  `release.yaml`.
 - `nerv-release configure` is the interactive wizard for every
   user-scope provider key (for example `release-ssh-compose`'s
   `ssh_auth`/`ssh_key_file`); on a non-interactive shell it prints the
@@ -175,6 +183,7 @@ Key flags of the engine commands (each also takes `--cwd <dir>`):
 |---|---|
 | `version next` | `--branch`, `--project`, `--offline` (local tags and notes only), `--format text\|json\|env` |
 | `build` | `--dry-run` (run the pipeline, write no artifact), `--expect <project>=<version>` (repeatable; refuse any other version), `--yes` (no confirmation), `--version <semver>` (override the computed one), `--force` (replace an existing artifact), `--branch`, `--project`, `--json` |
+| `migrate` | `--dry-run` (print the plan, write nothing), `--user` (also the global release.yaml) |
 | `deploy` | `--artifact <dir>` (required), `--dry-run` (prepare and show the steps, push nothing), `--rebase` (re-apply on a moved origin branch), `--target <name>` (repeatable), `--yes`, `--json` |
 
 A typical flow rehearses first, then runs exactly what the rehearsal
@@ -352,10 +361,27 @@ the same command again.
 ## Migrating from nerv or semantic-release
 
 - A 4.2.0-shaped `release:` section (`semantic_release:`, project
-  presets) and the old `pipeline:` section are refused, naming each key;
-  convert them with nerv's `nerv migrate`, or by hand as the `release`
-  skill's [migration section](plugin/release/skills/release/SKILL.md#6-migration)
-  describes.
+  presets), the old `pipeline:` section, the 5.0.0-alpha.1 `ship:`
+  section and moved engine keys are refused, naming each key. nerv moves
+  them into `.ai-workflow/release.yaml` as they are (its `nerv migrate`
+  hands them over), and `nerv-release migrate` converts them there:
+  `ship:` becomes `release:`, the presets become `build: bash` stages
+  with the semantic-release configuration imported, `pipeline:` becomes
+  `deploy:` (one `release-ssh-compose` target per environment,
+  `host: github` on a GitHub origin), `provider: bash` targets become
+  `script`, and `.ai-workflow/providers/deploy-<name>` moves to
+  `release-<name>`. Run `nerv-release migrate --dry-run` first; every
+  replaced repository file is backed up under the git-ignored
+  `.nerv/backups/release-migrate-<timestamp>/` (the global `release.yaml` next to
+  it, `<file>.bak-migrate-<timestamp>`), nothing already in today's
+  shape is overwritten, and a second run changes nothing. The personal
+  `release-ssh-compose` settings of a `pipeline:` (`ssh_auth`,
+  `ssh_key_file`, `ssh_known_hosts`, `infisical_domain`, ...) are never
+  moved to the global `release.yaml`, even with `--user`: a repository
+  must not set them for all your repositories. Each one is dropped and
+  printed with the command that sets it, to run if you trust the
+  repository (`nerv-release configure --set ssh-compose.<key>=<value>`). By hand, see the
+  `release` skill's [migration section](plugin/release/skills/release/SKILL.md#6-migration).
 - `nerv-release init --import` copies nerv's `release:`/`deploy:` blocks
   from `.ai-workflow/config.yaml` into `.ai-workflow/release.yaml`,
   repository-scope keys only; user-scope keys are reported as skipped,

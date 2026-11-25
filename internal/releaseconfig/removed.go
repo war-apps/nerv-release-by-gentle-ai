@@ -12,8 +12,8 @@ import (
 )
 
 // MigrateHint is how a repository moves from the removed sections to the
-// release: and deploy: sections.
-const MigrateHint = "nerv migrate rewrites it; by hand, see /release:setup and /release:deploy-setup"
+// release: and deploy: sections; it names nerv-release migrate once.
+const MigrateHint = "run nerv-release migrate to convert it (by hand, see /release:setup and /release:deploy-setup, then remove the section)"
 
 // RemovedSections reports the removed top-level sections of a
 // .ai-workflow/release.yaml text, each with what replaced it: ship: (the
@@ -35,7 +35,7 @@ func RemovedSections(data []byte) []string {
 }
 
 // LegacyHint is how a 4.2.0 release: section becomes today's.
-const LegacyHint = "run nerv migrate to convert it into the current release: section"
+const LegacyHint = "run nerv-release migrate to convert it into the current release: section"
 
 // LegacyKeys returns the 4.2.0 keys of the release: section of a
 // .ai-workflow/release.yaml text, each with its path (release.semantic_release,
@@ -100,7 +100,7 @@ func RemovedShip(data []byte) string {
 	}
 	return AlphaSectionKey + ": the ship: section of nerv 5.0.0-alpha.1 is no longer read: ship was renamed release " +
 		"(the version engine keys moved under release.providers." + EngineProvider + " and build.mode became the build provider's name, build: docker-compose or bash); " +
-		"run nerv migrate to convert it into the release: section"
+		"run nerv-release migrate to convert it into the release: section"
 }
 
 // RemovedPipeline is RemovedSections' message for the pipeline: section
@@ -149,8 +149,8 @@ var pipelineParts = []struct {
 	{[]string{"branches"}, "pipeline.branches: release.providers.conventional-commits.branches (the version engine's branches)"},
 	{[]string{"registry", "images"}, "pipeline.registry and pipeline.images: the project's images (built and saved into the artifact by nerv release), " +
 		"pushed by the release-ssh-compose target's publish (the registry login is its config)"},
-	{[]string{"docker"}, "docker and release: nerv release, then nerv deploy (the image is built and saved into the artifact by release and pushed by deploy)"},
-	{[]string{"release"}, "pipeline.release.version_files: the project's version_files; the release itself is nerv release, then nerv deploy (tag, release commit and host release)"},
+	{[]string{"docker"}, "docker and release: nerv-release build, then nerv-release deploy (the image is built and saved into the artifact by release and pushed by deploy)"},
+	{[]string{"release"}, "pipeline.release.version_files: the project's version_files; the release itself is nerv-release build, then nerv-release deploy (tag, release commit and host release)"},
 	{[]string{"deploy"}, "pipeline.deploy: the release-ssh-compose targets of the deploy: section (one per environment)"},
 	{[]string{"sync"}, "pipeline.sync: not ported yet (no back-merge after a release)"},
 }
@@ -179,10 +179,10 @@ func pipelineMessage(node *yaml.Node) string {
 	if deploy := mappingValue(node, "deploy"); deploy != nil {
 		if sel := mappingValue(deploy, "selection"); sel != nil && sel.Value == "branches" {
 			msg += " pipeline.deploy.selection: branches has no equivalent: a release-ssh-compose target deploys its environment when the environment's " +
-				"DOCKER_IMAGE_VERSION points at the release; list one target per environment and choose them with nerv deploy --target."
+				"DOCKER_IMAGE_VERSION points at the release; list one target per environment and choose them with nerv-release deploy --target."
 		}
 	}
-	return msg + " To translate it, run nerv migrate (" + MigrateHint + "); then remove the section."
+	return msg + " To convert it, " + MigrateHint + "."
 }
 
 // removedSectionKeys are the keys removed from the section itself.
