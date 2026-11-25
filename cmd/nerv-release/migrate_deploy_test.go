@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	nervrelease "github.com/war-apps/nerv-release-by-gentle-ai"
-	"github.com/war-apps/nerv-release-by-gentle-ai/internal/config"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/deployconfig"
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/deployprovider"
 )
@@ -15,8 +14,8 @@ import (
 // S3 (6.6 TestDeploy_PipelineBecomesTargetsAndHost): pipeline: becomes
 // one release-ssh-compose target per environment plus the github host,
 // loadable by deployconfig and the provider manifest; what has no
-// equivalent is reported; without --user the personal settings are
-// reported with the --user hint and left out.
+// equivalent is reported; the personal settings are dropped and
+// reported with the command that sets them.
 func TestMigrate_PipelineBecomesTargetsAndHost(t *testing.T) {
 	w := fixtureWorld(t, legacyFull, migrateGitHubOrigin)
 	stdout := w.mustMigrate()
@@ -55,10 +54,8 @@ func TestMigrate_PipelineBecomesTargetsAndHost(t *testing.T) {
 		"pipeline.deploy: one release-ssh-compose target per environment (staging, production)",
 		"pipeline: removed (nerv pipeline was removed)",
 		"selection: branches has no equivalent", "choose them with nerv-release deploy --target",
-		"pipeline.sync", "pipeline.registry", "pipeline.dotnet", "pipeline.images",
-		"deploy.targets[*].config.ssh_auth: a personal setting (scope user); dropped from the migrated release.yaml (run nerv-release migrate --user here to move it to the global release.yaml instead)",
-		"deploy.targets[*].config.infisical_domain: a personal setting",
-		"deploy.targets[*].config.ssh_key_file: a personal setting")
+		"pipeline.sync", "pipeline.registry", "pipeline.dotnet", "pipeline.images")
+	containsAll(t, "stdout", stdout, personalKeyWarnings...)
 	text := w.read(releaseYAMLRel)
 	containsNone(t, "release.yaml", text, "pipeline:", "ssh_auth", "infisical_domain", "ssh_key_file")
 	if w.exists(w.globalPath()) {
@@ -67,45 +64,43 @@ func TestMigrate_PipelineBecomesTargetsAndHost(t *testing.T) {
 	w.assertNoop()
 }
 
-// S3/S5: with --user the personal settings move to the global
-// release.yaml, at deploy.providers.ssh-compose.<key>; a second run
-// changes nothing.
-func TestMigrate_PipelinePersonalKeysMoveWithUser(t *testing.T) {
-	w := fixtureWorld(t, legacyFull, migrateGitHubOrigin)
-	stdout := w.mustMigrate("--user")
-	want := map[string]any{"deploy": map[string]any{"providers": map[string]any{"ssh-compose": map[string]any{
-		"infisical_domain": "https://infisical.acme", "ssh_auth": "key", "ssh_key_file": "~/.ssh/id_deploy",
-	}}}}
-	if got := yamlMap(t, w.read(w.globalPath())); !reflect.DeepEqual(got, want) {
-		t.Errorf("global release.yaml = %v, want %v", got, want)
-	}
-	containsAll(t, "stdout", stdout,
-		"Create "+w.globalPath()+": nerv-release's global configuration, converted",
-		"pipeline.deploy: ssh_auth moved to the global release.yaml as deploy.providers.ssh-compose.ssh_auth")
-	containsNone(t, "release.yaml", w.read(releaseYAMLRel), "ssh_auth", "infisical_domain", "ssh_key_file")
-	if _, err := deployconfig.Load(w.root); err != nil {
-		t.Fatalf("deployconfig.Load: %v", err)
-	}
-	w.assertNoop("--user")
+// personalKeyWarnings are the warnings of legacy-full's personal
+// release-ssh-compose settings: each one dropped, never moved, with the
+// command that sets it.
+var personalKeyWarnings = []string{
+	"pipeline.deploy: infisical_domain (https://infisical.acme) is a personal setting (scope user) and was dropped: a repository never sets your personal settings; if you trust this repository, set it yourself: nerv-release configure --set ssh-compose.infisical_domain=https://infisical.acme",
+	"pipeline.deploy: ssh_auth (key) is a personal setting (scope user) and was dropped: a repository never sets your personal settings; if you trust this repository, set it yourself: nerv-release configure --set ssh-compose.ssh_auth=key",
+	"pipeline.deploy: ssh_key_file (~/.ssh/id_deploy) is a personal setting (scope user) and was dropped: a repository never sets your personal settings; if you trust this repository, set it yourself: nerv-release configure --set 'ssh-compose.ssh_key_file=~/.ssh/id_deploy'",
 }
 
-// S3: a personal setting the global release.yaml already sets is kept
-// there, never overwritten, and reported.
-func TestMigrate_PipelinePersonalKeyAlreadySetIsKept(t *testing.T) {
-	w := fixtureWorld(t, legacyFull, migrateGitHubOrigin)
-	existing := "# mine\ndeploy:\n  providers:\n    ssh-compose:\n      ssh_auth: agent\n"
-	w.write(w.globalPath(), existing)
-	stdout := w.mustMigrate("--user")
-	global := config.Parse(w.read(w.globalPath()))
-	if got, _ := global.Scalar("deploy.providers.ssh-compose.ssh_auth"); got != "agent" {
-		t.Errorf("ssh_auth = %q, want the global file's own agent", got)
-	}
-	if got, _ := global.Scalar("deploy.providers.ssh-compose.ssh_key_file"); got != "~/.ssh/id_deploy" {
-		t.Errorf("ssh_key_file = %q, want moved", got)
-	}
-	containsAll(t, "stdout", stdout, "deploy.targets[*].config.ssh_auth: dropped from the migrated release.yaml; the global release.yaml already sets deploy.providers.ssh-compose.ssh_auth to agent")
-	if bak := backups(t, w.globalPath()); len(bak) != 1 || mustReadFile(t, bak[0]) != existing {
-		t.Errorf("global backups = %v, want one holding the old file", bak)
+// S3 (security; nerv-clean S2): with --user too, a repository's personal
+// settings never reach the global release.yaml — a cloned repository
+// must not set a known_hosts file, key file or Infisical domain for every
+// repository of the user: they are dropped and reported, and the global
+// file is left as it was, with no backup.
+func TestMigrate_PipelinePersonalKeysNeverReachTheGlobalFile(t *testing.T) {
+	for _, existing := range []string{"", "# mine\ndeploy:\n  providers:\n    ssh-compose:\n      ssh_auth: agent\n"} {
+		w := fixtureWorld(t, legacyFull, migrateGitHubOrigin)
+		if existing != "" {
+			w.write(w.globalPath(), existing)
+		}
+		stdout := w.mustMigrate("--user")
+		containsAll(t, "stdout", stdout, personalKeyWarnings...)
+		containsNone(t, "stdout", stdout, "moved to the global release.yaml", "migrate --user here", w.globalPath())
+		switch {
+		case existing == "" && w.exists(w.globalPath()):
+			t.Errorf("the global release.yaml was created:\n%s", w.read(w.globalPath()))
+		case existing != "" && w.read(w.globalPath()) != existing:
+			t.Errorf("the global release.yaml changed:\n%s", w.read(w.globalPath()))
+		}
+		if bak := backups(t, w.globalPath()); len(bak) != 0 {
+			t.Errorf("global backups = %v, want none", bak)
+		}
+		containsNone(t, "release.yaml", w.read(releaseYAMLRel), "ssh_auth", "infisical_domain", "ssh_key_file")
+		if _, err := deployconfig.Load(w.root); err != nil {
+			t.Fatalf("deployconfig.Load: %v", err)
+		}
+		w.assertNoop("--user")
 	}
 }
 

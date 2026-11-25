@@ -8,9 +8,12 @@
 // conversions, written to release.yaml instead of nerv's config.yaml.
 //
 // Compute plans everything without writing; Apply writes the plan, each
-// replaced file backed up next to it (atomicfile, "bak-migrate-"). A key
+// replaced file backed up first: a repository file under the repository's
+// .nerv/backups/release-migrate-<timestamp>/ (git-ignored by .nerv/.gitignore),
+// the global release.yaml next to it (atomicfile, "bak-migrate-"). A key
 // already set in today's shape is never overwritten: it is kept and
-// reported. A second run plans nothing.
+// reported. A repository's personal settings are dropped and reported,
+// never written to the global file. A second run plans nothing.
 package legacymigrate
 
 import (
@@ -31,9 +34,12 @@ import (
 	"github.com/war-apps/nerv-release-by-gentle-ai/internal/workflowconfig"
 )
 
-// BackupSuffix names the backups of the files Apply replaces
+// BackupSuffix names the backup of the global release.yaml Apply replaces
 // (atomicfile's "<path>.<suffix><timestamp>").
 const BackupSuffix = "bak-migrate-"
+
+// backupTimeFormat is the timestamp of a backup (atomicfile's).
+const backupTimeFormat = "20060102-150405"
 
 // ProjectProvidersDir is the repository's own providers folder, relative
 // to its root.
@@ -49,8 +55,9 @@ const globalFile = "the global release.yaml"
 type Options struct {
 	// RepoRoot is the repository's top level; "" migrates no repository.
 	RepoRoot string
-	// UserPath is the global release.yaml (--user); "" leaves it alone,
-	// and the repository's personal keys are then dropped and reported.
+	// UserPath is the global release.yaml (--user); "" leaves it alone.
+	// The repository's personal keys never go there: they are dropped
+	// and reported either way.
 	UserPath string
 	// ExtensionsFS holds the provider manifests (release-ssh-compose's
 	// user-scope keys).
@@ -130,12 +137,18 @@ func Compute(o Options) (*Plan, error) {
 	var repo []Change
 	if o.RepoRoot != "" {
 		var err error
-		if repo, err = planRepo(p, o, user); err != nil {
+		if repo, err = planRepo(p, o); err != nil {
 			return nil, err
 		}
+		// The backups of a repository file go under its .nerv/: refused
+		// before anything is written when it is redirected.
+		if len(repo) > 0 {
+			if err := checkBackupDir(o.RepoRoot); err != nil {
+				return nil, err
+			}
+		}
 	}
-	// The global file first: it receives the personal keys the
-	// repository file drops, so an interrupted run loses none.
+	// The global file first: it is converted on its own content only.
 	if user != nil {
 		text := user.doc.String()
 		if !user.exists {
@@ -155,7 +168,7 @@ func Compute(o Options) (*Plan, error) {
 
 // planRepo plans the repository at o.RepoRoot: its release.yaml and its
 // project deploy providers.
-func planRepo(p *Plan, o Options, user *userState) ([]Change, error) {
+func planRepo(p *Plan, o Options) ([]Change, error) {
 	root := o.RepoRoot
 	if err := checkProjectDir(root); err != nil {
 		return nil, err
@@ -172,7 +185,7 @@ func planRepo(p *Plan, o Options, user *userState) ([]Change, error) {
 	if err != nil || !exists {
 		return changes, err
 	}
-	doc, err := convert(p, o, config.Parse(string(data)), user)
+	doc, err := convert(p, o, config.Parse(string(data)))
 	if err != nil {
 		return nil, err
 	}
@@ -187,11 +200,11 @@ func planRepo(p *Plan, o Options, user *userState) ([]Change, error) {
 }
 
 // convert rewrites doc, the repository release.yaml, in place.
-func convert(p *Plan, o Options, doc *config.Document, user *userState) (*config.Document, error) {
+func convert(p *Plan, o Options, doc *config.Document) (*config.Document, error) {
 	var dep *deployTranslation
 	if doc.KeyExists("pipeline") {
 		var err error
-		if dep, err = translatePipeline(p, []byte(doc.String()), o.ExtensionsFS, user); err != nil {
+		if dep, err = translatePipeline(p, []byte(doc.String()), o.ExtensionsFS); err != nil {
 			return nil, err
 		}
 		doc.SetBlock("pipeline", "")
@@ -340,10 +353,13 @@ func checkLoads(text string) error {
 	return nil
 }
 
-// Apply writes the plan in order: each replaced file is backed up next
-// to it first. It returns the backups. A failure stops at that change:
-// the ones before it are applied (each one whole), and a new run picks up
-// what is left.
+// Apply writes the plan in order: each replaced file is backed up
+// first, a repository file under <repository>/.nerv/backups/
+// migrate-<timestamp>/<its repository-relative path> (.nerv/ gets a
+// .gitignore of "*" when it has none, so no backup is ever committed),
+// the global release.yaml next to it. It returns the backups. A failure
+// stops at that change: the ones before it are applied (each one whole),
+// and a new run picks up what is left.
 func Apply(p *Plan, now time.Time) ([]string, error) {
 	var backups []string
 	for _, c := range p.Changes {
@@ -359,25 +375,128 @@ func Apply(p *Plan, now time.Time) ([]string, error) {
 				return backups, err
 			}
 		case Write:
-			if c.Old == nil {
-				if err := os.MkdirAll(filepath.Dir(c.Path), 0o755); err != nil {
+			rel, inRepo := repoRelative(p.RepoRoot, c.Path)
+			if c.Old != nil && !inRepo {
+				backup, err := atomicfile.Save(c.Path, c.New, atomicfile.Options{Now: now, BackupSuffix: BackupSuffix})
+				if err != nil {
 					return backups, err
 				}
-				if err := atomicfile.Write(c.Path, c.New, 0o644); err != nil {
-					return backups, err
+				if backup != "" {
+					backups = append(backups, backup)
 				}
 				continue
 			}
-			backup, err := atomicfile.Save(c.Path, c.New, atomicfile.Options{Now: now, BackupSuffix: BackupSuffix})
-			if err != nil {
+			if c.Old != nil {
+				backup, err := backupRepoFile(p.RepoRoot, rel, c.Old, now)
+				if err != nil {
+					return backups, err
+				}
+				backups = append(backups, backup)
+			}
+			if err := os.MkdirAll(filepath.Dir(c.Path), 0o755); err != nil {
 				return backups, err
 			}
-			if backup != "" {
-				backups = append(backups, backup)
+			if err := atomicfile.Write(c.Path, c.New, 0o644); err != nil {
+				return backups, err
 			}
 		}
 	}
 	return backups, nil
+}
+
+// repoRelative is path relative to the repository root, and whether it is
+// inside it.
+func repoRelative(root, path string) (string, bool) {
+	if root == "" {
+		return "", false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return rel, true
+}
+
+// backupDir is the repository's .nerv/backups folder.
+func backupDir(root string) string { return filepath.Join(root, ".nerv", "backups") }
+
+// checkBackupDir refuses a .nerv or .nerv/backups that is a symlink or not
+// a directory: a cloned repository must never redirect where migrate
+// writes its backups.
+func checkBackupDir(root string) error {
+	for _, dir := range []string{filepath.Join(root, ".nerv"), backupDir(root)} {
+		info, err := os.Lstat(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return refuse("refusing %s: expected a directory, not a symlink (migrate keeps its backups there); a cloned repository must not redirect it", dir)
+		}
+	}
+	return nil
+}
+
+// backupRepoFile writes old, a repository file's content, to
+// .nerv/backups/release-migrate-<now>/<rel>, never over an existing file, after
+// making sure .nerv/ ignores itself. It returns the backup's path.
+func backupRepoFile(root, rel string, old []byte, now time.Time) (string, error) {
+	if err := checkBackupDir(root); err != nil {
+		return "", err
+	}
+	if err := ensureNervIgnored(root); err != nil {
+		return "", err
+	}
+	// nerv migrate backs its own files up under .nerv/backups/migrate-<time>/
+	// just before it runs this command: release-migrate-<time> keeps the
+	// two apart, and a numbered sibling takes a folder that already holds
+	// rel (two runs in the same second).
+	base := filepath.Join(backupDir(root), "release-migrate-"+now.Format(backupTimeFormat))
+	var f *os.File
+	var path string
+	for n := 1; ; n++ {
+		dir := base
+		if n > 1 {
+			dir = fmt.Sprintf("%s-%d", base, n)
+		}
+		path = filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return "", err
+		}
+		var err error
+		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, fs.ErrExist) || n >= 100 {
+			return "", err
+		}
+	}
+	if _, err := f.Write(old); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ensureNervIgnored writes <root>/.nerv/.gitignore of "*" when it has
+// none, so nothing under .nerv/ is committed and the repository's own
+// .gitignore is never touched (as internal/artifact does for the
+// artifacts).
+func ensureNervIgnored(root string) error {
+	ignore := filepath.Join(root, ".nerv", ".gitignore")
+	if _, err := os.Lstat(ignore); !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(ignore), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(ignore, []byte("*\n"), 0o644)
 }
 
 // Render is the plan as a user reads it: the numbered steps in the order

@@ -62,10 +62,9 @@ func sshComposeManifest(fsys fs.FS) (*deployprovider.Manifest, error) {
 
 // translatePipeline turns the 4.2.0 pipeline: section into deploy targets:
 // one release-ssh-compose target per environment of pipeline.deploy, with
-// the settings written there. The user-scope settings go to the global
-// release.yaml with user, otherwise nowhere, reported. What has
-// no equivalent is reported.
-func translatePipeline(p *Plan, data []byte, fsys fs.FS, user *userState) (*deployTranslation, error) {
+// the settings written there. The user-scope settings are dropped and
+// reported, never written anywhere. What has no equivalent is reported.
+func translatePipeline(p *Plan, data []byte, fsys fs.FS) (*deployTranslation, error) {
 	node, err := yamlsection.Locate(data, "pipeline")
 	if err != nil {
 		return nil, refuse("pipeline: cannot be read: %v", err)
@@ -124,22 +123,16 @@ func translatePipeline(p *Plan, data []byte, fsys fs.FS, user *userState) (*depl
 		if !ok || c.Scope != "user" {
 			continue
 		}
-		path := "deploy.providers." + sshComposeProvider + "." + key
-		switch {
-		case user == nil:
-			p.warn("deploy.targets[*].config.%s: a personal setting (scope user); dropped from the migrated release.yaml (run nerv-release migrate --user here to move it to the global release.yaml instead)", key)
-		case func() bool { _, set := user.doc.Scalar(path); return set }():
-			existing, _ := user.doc.Scalar(path)
-			p.warn("deploy.targets[*].config.%s: dropped from the migrated release.yaml; the global release.yaml already sets %s to %s", key, path, existing)
-		default:
-			user.doc.SetScalar(path, shared[key])
-			p.note("pipeline.deploy: %s moved to the global release.yaml as %s", key, path)
-		}
-		// A personal (scope: user) key must never land in a target's
+		// A personal (scope: user) key never leaves the repository for
+		// the global release.yaml, --user or not: a cloned repository
+		// must not set a known_hosts file, a key file or an Infisical
+		// domain for every repository of the user (personal settings
+		// never move repository -> global). Nor may it land in a target's
 		// config: a project setting one is refused at load time
-		// (deployconfig.Load, R-S4), so it is always dropped here, never
-		// written into every target — reported above, and moved to the
-		// global release.yaml when --user applies.
+		// (deployconfig.Load). It is dropped, with the command the user
+		// runs to set it when they trust the repository.
+		p.warn("pipeline.deploy: %s (%s) is a personal setting (scope user) and was dropped: a repository never sets your personal settings; if you trust this repository, set it yourself: nerv-release configure --set %s",
+			key, shared[key], shellQuote(sshComposeProvider+"."+key+"="+shared[key]))
 		delete(shared, key)
 	}
 	envs := oldEnvironments
@@ -165,6 +158,19 @@ func translatePipeline(p *Plan, data []byte, fsys fs.FS, user *userState) (*depl
 	}
 	p.note("pipeline.deploy: one release-ssh-compose target per environment (%s)", strings.Join(envs, ", "))
 	return out, nil
+}
+
+// shellSafe is what a POSIX shell and PowerShell pass through as one
+// word unchanged (no "~", which a shell expands after "=").
+var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
+
+// shellQuote is s as one shell word: as it is when nothing in it is
+// special, single-quoted otherwise.
+func shellQuote(s string) string {
+	if shellSafe.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
 func orDefault(v, d string) string {

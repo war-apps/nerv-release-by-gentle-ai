@@ -66,7 +66,7 @@ func TestMigrate_LegacyReleaseBecomesBashBuild(t *testing.T) {
 	text := w.read(releaseYAMLRel)
 	containsAll(t, "release.yaml", text, "# The release sections nerv moved here", "\nrelease:", `# "Internal CLR error (0x80131506)" when MSBuild/compiler servers are reused.`)
 	containsNone(t, "release.yaml", text, "presets:", "semantic_release:")
-	if bak := backups(t, w.path(releaseYAMLRel)); len(bak) != 1 || mustReadFile(t, bak[0]) != old {
+	if bak := w.repoBackups(releaseYAMLRel); len(bak) != 1 || mustReadFile(t, bak[0]) != old {
 		t.Errorf("backups = %v, want one holding the old file", bak)
 	}
 	w.assertNoop()

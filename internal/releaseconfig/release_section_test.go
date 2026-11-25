@@ -157,7 +157,7 @@ release:
 	for _, want := range []string{
 		"pipeline: section is no longer read",
 		"validate and test: nerv release",
-		"docker and release: nerv release, then nerv deploy",
+		"docker and release: nerv-release build, then nerv-release deploy",
 		"deploy: the release-ssh-compose target",
 		"sync: not ported yet",
 		"selection: branches",

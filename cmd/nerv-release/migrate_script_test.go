@@ -108,7 +108,7 @@ func TestMigrate_ProjectDeployProvidersMove(t *testing.T) {
 	if !w.exists(".ai-workflow/providers/task-board/provider.yaml") {
 		t.Error("a task provider moved")
 	}
-	if bak := backups(t, w.path(".ai-workflow/providers/release-rsync/provider.yaml")); len(bak) != 1 || mustReadFile(t, bak[0]) != manifest {
+	if bak := w.repoBackups(".ai-workflow/providers/release-rsync/provider.yaml"); len(bak) != 1 || mustReadFile(t, bak[0]) != manifest {
 		t.Errorf("provider.yaml backups = %v, want one holding the old manifest", bak)
 	}
 	w.assertNoop()
@@ -154,14 +154,20 @@ func TestMigrate_RefusesAResultThatDoesNotLoad(t *testing.T) {
 	}
 }
 
-// S3: a symlinked release.yaml or .ai-workflow folder is refused: a
-// cloned repository must never redirect what migrate writes.
+// S3: a symlinked release.yaml, .ai-workflow or .nerv folder (where the
+// backups go) is refused: a cloned repository must never redirect what
+// migrate writes.
 func TestMigrate_RefusesSymlinks(t *testing.T) {
-	for _, link := range []string{releaseYAMLRel, ".ai-workflow"} {
+	for _, link := range []string{releaseYAMLRel, ".ai-workflow", ".nerv"} {
 		t.Run(link, func(t *testing.T) {
 			w := newMigrateWorld(t, "", map[string]string{"README.md": "x\n"})
 			target := filepath.Join(t.TempDir(), "elsewhere")
-			if link == releaseYAMLRel {
+			if link == ".nerv" {
+				w.write(releaseYAMLRel, "deploy:\n  targets:\n    - { name: s, provider: bash }\n")
+				if err := os.MkdirAll(target, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			} else if link == releaseYAMLRel {
 				w.write(target, "ship:\n  projects: []\n")
 				if err := os.MkdirAll(w.path(".ai-workflow"), 0o755); err != nil {
 					t.Fatal(err)

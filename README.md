@@ -371,10 +371,16 @@ the same command again.
   `host: github` on a GitHub origin), `provider: bash` targets become
   `script`, and `.ai-workflow/providers/deploy-<name>` moves to
   `release-<name>`. Run `nerv-release migrate --dry-run` first; every
-  replaced file is backed up (`<file>.bak-migrate-<timestamp>`), nothing
-  already in today's shape is overwritten, and a second run changes
-  nothing. With `--user` the personal `release-ssh-compose` settings of
-  a `pipeline:` move to the global `release.yaml`. By hand, see the
+  replaced repository file is backed up under the git-ignored
+  `.nerv/backups/release-migrate-<timestamp>/` (the global `release.yaml` next to
+  it, `<file>.bak-migrate-<timestamp>`), nothing already in today's
+  shape is overwritten, and a second run changes nothing. The personal
+  `release-ssh-compose` settings of a `pipeline:` (`ssh_auth`,
+  `ssh_key_file`, `ssh_known_hosts`, `infisical_domain`, ...) are never
+  moved to the global `release.yaml`, even with `--user`: a repository
+  must not set them for all your repositories. Each one is dropped and
+  printed with the command that sets it, to run if you trust the
+  repository (`nerv-release configure --set ssh-compose.<key>=<value>`). By hand, see the
   `release` skill's [migration section](plugin/release/skills/release/SKILL.md#6-migration).
 - `nerv-release init --import` copies nerv's `release:`/`deploy:` blocks
   from `.ai-workflow/config.yaml` into `.ai-workflow/release.yaml`,

@@ -131,15 +131,25 @@ What has no equivalent (npm and NuGet pushes, `pipeline.sync`,
 file gets a `TODO(nerv-release migrate):` comment where it applies. The
 personal `release-ssh-compose` keys of a `pipeline:` (`ssh_auth`,
 `ssh_key_file`, `ssh_known_hosts`, `ssh_connect_timeout`,
-`infisical_domain`) move to the global `release.yaml`
-(`deploy.providers.ssh-compose.<key>`) with `--user`, never overwriting
-a value it already has; without it they are reported and left out.
+`infisical_domain`) are dropped from the repository file and never
+written to the global `release.yaml`, with or without `--user`: a cloned
+repository must not set a key file, a known_hosts file or an Infisical
+domain for every repository of the user. Each one is printed under
+"Check by hand" with its value and the command that sets it, to run if
+you trust the repository:
+`nerv-release configure --set ssh-compose.<key>=<value>`. `--user`
+converts only the global file's own `provider: bash` targets.
 
 The result must load with today's loaders, or nothing is written.
-Every replaced file is backed up next to it
-(`<file>.bak-migrate-<timestamp>`); `--dry-run` prints the plan and
-writes nothing; a second run prints `nothing to migrate`. A symlinked
-`release.yaml` or `.ai-workflow` folder is refused. Exit codes: 0
+Every replaced repository file is backed up under
+`.nerv/backups/release-migrate-<timestamp>/<its repository path>`, never next to
+it in the committed `.ai-workflow/` (the `release.yaml` backup can hold
+personal keys); `.nerv/` gets a `.gitignore` of `*` when it has none.
+The global `release.yaml` is backed up next to it
+(`<file>.bak-migrate-<timestamp>`). The backup paths are printed.
+`--dry-run` prints the plan and writes nothing; a second run prints
+`nothing to migrate`. A symlinked `release.yaml`, `.ai-workflow` or
+`.nerv` folder is refused. Exit codes: 0
 migrated, nothing to migrate or a dry run; 1 refused; 2 usage or
 environment error.
 

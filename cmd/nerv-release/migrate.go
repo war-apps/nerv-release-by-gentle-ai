@@ -42,14 +42,18 @@ Converts the legacy release and deploy sections of .ai-workflow/release.yaml
 What has no equivalent is listed under "Check by hand". A key already set
 in today's shape is kept and reported, never overwritten. The personal
 release-ssh-compose settings of a pipeline: (ssh_auth, ssh_key_file, ...)
-move to the global release.yaml with --user; without it they are reported
-and left out of the repository file. Every file replaced is backed up next
-to it (<file>.bak-migrate-<timestamp>). A second run changes nothing.
+are dropped from the repository file and never written to the global
+release.yaml, with or without --user: each one is reported with the
+command that sets it (nerv-release configure --set ssh-compose.<key>=<value>),
+to run if you trust the repository. Every repository file replaced is
+backed up under .nerv/backups/release-migrate-<timestamp>/ (git-ignored), the
+global release.yaml next to it (<file>.bak-migrate-<timestamp>). A second
+run changes nothing.
 
 Flags:
   --user         Also convert the global release.yaml (provider: bash
-                 targets under deploy: and defaults.deploy) and move the
-                 personal settings into it; outside a repository, only it
+                 targets under deploy: and defaults.deploy); outside a
+                 repository, only it
   --dry-run      Print what would change; write nothing
   --cwd <dir>    A directory inside the repository (default ".")
 

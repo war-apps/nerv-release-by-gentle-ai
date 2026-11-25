@@ -172,6 +172,21 @@ func backups(t *testing.T, path string) []string {
 	return matches
 }
 
+// repoBackups lists the backups of the repository file rel: they live
+// under .nerv/backups/release-migrate-<timestamp>/<rel>, never next to the file
+// in a committed folder; it fails when one sits next to the file.
+func (w migrateWorld) repoBackups(rel string) []string {
+	w.t.Helper()
+	if next := backups(w.t, w.path(rel)); len(next) != 0 {
+		w.t.Errorf("backups next to %s, in a committed folder: %v", rel, next)
+	}
+	matches, err := filepath.Glob(filepath.Join(w.root, ".nerv", "backups", "release-migrate-*", filepath.FromSlash(rel)))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return matches
+}
+
 // yamlMap decodes text into a generic map.
 func yamlMap(t *testing.T, text string) map[string]any {
 	t.Helper()
@@ -345,7 +360,7 @@ func TestMigrate_ShipSectionBecomesRelease(t *testing.T) {
 	if got, want := w.read(releaseYAMLRel), head+alpha1Release+tail; got != want {
 		t.Errorf("release.yaml =\n%s\nwant\n%s", got, want)
 	}
-	bak := backups(t, w.path(releaseYAMLRel))
+	bak := w.repoBackups(releaseYAMLRel)
 	if len(bak) != 1 || mustReadFile(t, bak[0]) != old {
 		t.Errorf("backups = %v, want one holding the old file", bak)
 	}
@@ -406,5 +421,57 @@ func TestMigrate_MovedKeys(t *testing.T) {
 			}
 			w.assertNoop()
 		})
+	}
+}
+
+// S3: the repository's backups go under .nerv/backups/release-migrate-<timestamp>
+// (the release.yaml one can hold personal keys, and .ai-workflow/ is
+// committed): .nerv/ gets a .gitignore of "*" when it has none, so git
+// never sees them; the printed backup path is that one.
+func TestMigrate_RepositoryBackupsAreIgnoredUnderNerv(t *testing.T) {
+	w := fixtureWorld(t, legacyFull, migrateGitHubOrigin)
+	old := w.read(releaseYAMLRel)
+	stdout := w.mustMigrate()
+	bak := w.repoBackups(releaseYAMLRel)
+	if len(bak) != 1 || mustReadFile(t, bak[0]) != old {
+		t.Fatalf("backups = %v, want one holding the old file", bak)
+	}
+	containsAll(t, "stdout", stdout, "backups: "+bak[0])
+	if got := w.read(".nerv/.gitignore"); got != "*\n" {
+		t.Errorf(".nerv/.gitignore = %q, want \"*\n\"", got)
+	}
+	out, err := exec.Command("git", "-C", w.root, "status", "--porcelain", "--untracked-files=all").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git status: %v %s", err, out)
+	}
+	containsNone(t, "git status", string(out), ".nerv", "bak-migrate")
+}
+
+// S3: a .nerv/.gitignore of the repository's own is kept as it is.
+func TestMigrate_KeepsAnExistingNervGitignore(t *testing.T) {
+	w := newMigrateWorld(t, "", map[string]string{releaseYAMLRel: "deploy:\n  targets:\n    - { name: s, provider: bash }\n", ".nerv/.gitignore": "# mine\nbackups/\n"})
+	w.mustMigrate()
+	if got := w.read(".nerv/.gitignore"); got != "# mine\nbackups/\n" {
+		t.Errorf(".nerv/.gitignore = %q, want the repository's own", got)
+	}
+	if bak := w.repoBackups(releaseYAMLRel); len(bak) != 1 {
+		t.Errorf("backups = %v, want one", bak)
+	}
+}
+
+// S5: each refusal of a legacy section names nerv-release migrate once,
+// and none names the old nerv deploy command.
+func TestLegacySectionRefusalsNameMigrateOnce(t *testing.T) {
+	for _, yamlText := range []string{
+		"release:\n  semantic_release: { version: 24.2.3 }\n  projects:\n    - name: api\n      path: .\n",
+		"pipeline:\n  test: { run: make test }\n",
+		"pipeline:\n  deploy: { selection: branches }\n  docker: {}\n  release: {}\n",
+		alphaShipYAML,
+	} {
+		f := newNextFixture(t, yamlText)
+		code, _, stderr := f.run(t)
+		if code != 1 || strings.Count(stderr, "nerv-release migrate") != 1 || strings.Contains(stderr, "nerv deploy") {
+			t.Errorf("%q: code=%d, want 1 and nerv-release migrate named once, no nerv deploy:\n%s", yamlText, code, stderr)
+		}
 	}
 }

@@ -353,7 +353,7 @@ func (im *importer) plugins(v any) {
 		case "@semantic-release/git":
 			im.git(cfg)
 		case "@semantic-release/github":
-			im.warn(name, "the GitHub release is not part of the version engine: nerv deploy's git host provider publishes it")
+			im.warn(name, "the GitHub release is not part of the version engine: nerv-release deploy's git host provider publishes it")
 		case "@semantic-release/npm":
 			im.npm(cfg)
 		case "@semantic-release/exec":
