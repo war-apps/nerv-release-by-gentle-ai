@@ -39,6 +39,9 @@ Engine commands:
   setup --import [--force] [--dry-run]
                          Import a semantic-release configuration into the
                          release: section (see "nerv-release setup --help")
+  migrate [--cwd <dir>] [--user] [--dry-run]
+                         Convert the legacy release and deploy sections nerv
+                         moved into release.yaml (see "nerv-release migrate --help")
 
 Tool commands:
   install [--no-configure]
@@ -147,6 +150,8 @@ func run(args []string, stdout, stderr io.Writer, opts options) int {
 		return runProvider(args[1:], stdout, stderr, opts)
 	case "setup":
 		return runReleaseSetup(args[1:], stdout, stderr, opts)
+	case "migrate":
+		return runMigrate(args[1:], stdout, stderr, opts)
 	case "build":
 		return runBuild(args[1:], stdout, stderr, opts)
 	case "deploy":

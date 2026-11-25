@@ -870,7 +870,7 @@ func TestVersionNext_SaysWhereTheVersionConfigCameFrom(t *testing.T) {
 // engine runs, saying what replaced them.
 func TestVersionNext_RefusesTheOldSections(t *testing.T) {
 	for _, tt := range []struct{ yaml, want string }{
-		{"release:\n  semantic_release: { version: 24.2.3 }\n  projects:\n    - name: api\n      path: .\n", "run nerv migrate"},
+		{"release:\n  semantic_release: { version: 24.2.3 }\n  projects:\n    - name: api\n      path: .\n", "run nerv-release migrate"},
 		{"pipeline:\n  test: { run: make test }\n", "validate and test: nerv release"},
 	} {
 		f := newNextFixture(t, tt.yaml)
@@ -958,7 +958,7 @@ ship:
 `
 
 // alphaShipWants is what the refusal of an alpha.1 ship: section says.
-var alphaShipWants = []string{"ship: the ship: section of nerv 5.0.0-alpha.1 is no longer read", "run nerv migrate"}
+var alphaShipWants = []string{"ship: the ship: section of nerv 5.0.0-alpha.1 is no longer read", "run nerv-release migrate"}
 
 // S1, L8 advisory 1: an alpha.1 ship: section is refused, naming nerv
 // migrate, before the engine runs; the file is left as it was.

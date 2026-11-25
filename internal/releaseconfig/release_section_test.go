@@ -92,7 +92,7 @@ func TestLoad_ReleaseSectionRefusesInvalidProviderNames(t *testing.T) {
 }
 
 // S1: a release: section with a 4.2.0 key (semantic_release:, a preset)
-// is the 4.2.0 section: the refusal names the keys and nerv migrate.
+// is the 4.2.0 section: the refusal names the keys and nerv-release migrate.
 func TestLoad_LegacyReleaseSectionIsRefused(t *testing.T) {
 	for _, tt := range []struct{ name, yaml, key string }{
 		{"semantic_release", "release:\n  semantic_release: { version: 24.2.3 }\n  projects:\n    - name: api\n      path: .\n      build: bash\n", "release.semantic_release"},
@@ -101,7 +101,7 @@ func TestLoad_LegacyReleaseSectionIsRefused(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := loadProblems(t, tt.yaml)
-			for _, want := range []string{"release: this is a 4.2.0 release: section", tt.key, "run nerv migrate"} {
+			for _, want := range []string{"release: this is a 4.2.0 release: section", tt.key, "run nerv-release migrate"} {
 				if !strings.Contains(got, want) {
 					t.Errorf("refusal lacks %q:\n%s", want, got)
 				}
@@ -161,7 +161,7 @@ release:
 		"deploy: the release-ssh-compose target",
 		"sync: not ported yet",
 		"selection: branches",
-		"nerv migrate",
+		"run nerv-release migrate",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("refusal lacks %q:\n%s", want, got)
@@ -215,7 +215,7 @@ func TestLoad_SectionWithoutProjects(t *testing.T) {
 }
 
 // B2 (L21): the pipeline: refusal names every real 4.2.0 key, with where it
-// went, and points to nerv migrate.
+// went, and points to nerv-release migrate.
 func TestRemovedSections_PipelineNamesEveryRealKey(t *testing.T) {
 	data := []byte("pipeline:\n  dotnet: { solution: App.slnx }\n  branches:\n    - { name: main }\n  registry: { host: ghcr.io }\n  images:\n    - { name: ghcr.io/acme/app }\n  release: { version_files: [App.csproj] }\n  deploy: { source: env, environments: [staging] }\n  sync: { enabled: true }\n")
 	msg := strings.Join(releaseconfig.RemovedSections(data), "\n")
@@ -224,7 +224,7 @@ func TestRemovedSections_PipelineNamesEveryRealKey(t *testing.T) {
 			t.Errorf("message does not say where pipeline.%s went:\n%s", key, msg)
 		}
 	}
-	for _, want := range []string{"build: bash", "release.providers.conventional-commits.branches", "project's images", "release-ssh-compose", "project's version_files", "not ported", "run nerv migrate"} {
+	for _, want := range []string{"build: bash", "release.providers.conventional-commits.branches", "project's images", "release-ssh-compose", "project's version_files", "not ported", "run nerv-release migrate"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message lacks %q:\n%s", want, msg)
 		}

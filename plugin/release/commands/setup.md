@@ -35,11 +35,11 @@ comments) is in English.
      `npm`): show that block as it is and ask one question: **edit it** (the
      default) or **start over**. Stop and wait. Never overwrite it silently.
    - It has a 4.2.0 `release:` section (one of those keys) or a `pipeline:`
-     key: they are no longer read. Say so, and that `nerv migrate --dry-run`
-     shows the whole migration of the file (config, sections, extensions to install).
+     key: they are no longer read. Say so, and that `nerv-release migrate --dry-run`
+     shows the conversion of those sections in release.yaml.
      Offer to rebuild only the release part here, from the 4.2.0 `release:`
      block (§2 of this command, the skill's §6), and leave `pipeline:` for
-     `nerv migrate` or for the user to delete. One question; stop and wait.
+     `nerv-release migrate` or for the user to delete. One question; stop and wait.
 
 4. Read the user's global `release.yaml` (the path `nerv-release configure --print --json` reports
    as `config_path`). Its `defaults.release`, when present, has the shape

@@ -13,7 +13,7 @@ import (
 
 // MigrateHint is how a repository moves from the removed sections to the
 // release: and deploy: sections.
-const MigrateHint = "nerv migrate rewrites it; by hand, see /release:setup and /release:deploy-setup"
+const MigrateHint = "nerv-release migrate rewrites it; by hand, see /release:setup and /release:deploy-setup"
 
 // RemovedSections reports the removed top-level sections of a
 // .ai-workflow/release.yaml text, each with what replaced it: ship: (the
@@ -35,7 +35,7 @@ func RemovedSections(data []byte) []string {
 }
 
 // LegacyHint is how a 4.2.0 release: section becomes today's.
-const LegacyHint = "run nerv migrate to convert it into the current release: section"
+const LegacyHint = "run nerv-release migrate to convert it into the current release: section"
 
 // LegacyKeys returns the 4.2.0 keys of the release: section of a
 // .ai-workflow/release.yaml text, each with its path (release.semantic_release,
@@ -100,7 +100,7 @@ func RemovedShip(data []byte) string {
 	}
 	return AlphaSectionKey + ": the ship: section of nerv 5.0.0-alpha.1 is no longer read: ship was renamed release " +
 		"(the version engine keys moved under release.providers." + EngineProvider + " and build.mode became the build provider's name, build: docker-compose or bash); " +
-		"run nerv migrate to convert it into the release: section"
+		"run nerv-release migrate to convert it into the release: section"
 }
 
 // RemovedPipeline is RemovedSections' message for the pipeline: section
@@ -182,7 +182,7 @@ func pipelineMessage(node *yaml.Node) string {
 				"DOCKER_IMAGE_VERSION points at the release; list one target per environment and choose them with nerv deploy --target."
 		}
 	}
-	return msg + " To translate it, run nerv migrate (" + MigrateHint + "); then remove the section."
+	return msg + " To translate it, run nerv-release migrate (" + MigrateHint + "); then remove the section."
 }
 
 // removedSectionKeys are the keys removed from the section itself.

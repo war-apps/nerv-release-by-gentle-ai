@@ -30,7 +30,7 @@ English.
      `/release:setup` comes first; stop.
    - A `deploy:` key: show it and ask **edit it** (the default) or **start
      over**. Stop and wait.
-   - An old `pipeline:` key: it is no longer read. Say `nerv migrate
+   - An old `pipeline:` key: it is no longer read. Say `nerv-release migrate
      --dry-run` shows its translation, and offer to build `deploy:` here
      from its `pipeline.deploy` environments instead (one
      `release-ssh-compose` target each). Its `pipeline.images` are not a
